@@ -14,7 +14,8 @@ export class TherapistTurnError extends Error {
 function outputs(response) { return Array.isArray(response?.output) ? response.output : []; }
 function functionCalls(response) { return outputs(response).filter((item) => item.type === 'function_call'); }
 function outputText(response) {
-  return outputs(response).flatMap((item) => item.content ?? []).filter((part) => part.type === 'output_text').map((part) => part.text).join('');
+  const message = outputs(response).filter((item) => item.type === 'message' && item.role === 'assistant').at(-1);
+  return (message?.content ?? []).filter((part) => part.type === 'output_text').map((part) => part.text).join('');
 }
 function fail(message, checkpoint, metadata) { return { status: 'failed', error: new TherapistTurnError(message, structuredClone(checkpoint), metadata), checkpoint: structuredClone(checkpoint) }; }
 function parseArguments(call) {
@@ -22,6 +23,13 @@ function parseArguments(call) {
 }
 function sameScope(a, b) {
   return ['run_id', 'actor_id', 'space_id', 'snapshot_seq'].every((key) => Object.hasOwn(a ?? {}, key) && Object.hasOwn(b ?? {}, key) && a[key] === b[key]);
+}
+function finalInput(state) {
+  return [{ role: 'user', content: JSON.stringify({
+    task: 'Using the confirmed request and retrieved evidence below, write the complete final therapist response. Treat the confirmed request as the user’s actual concern. Use the retrieved tool results as evidence; do not treat this message as a new or empty request.',
+    confirmed_input: state.input,
+    retrieved_tool_results: (state.tool_results ?? []).map(({ call_id, name, arguments: args, value }) => ({ call_id, name, arguments: args, value })),
+  }) }];
 }
 
 export async function runTherapistTurn({ model, instructions, input, scope, maxToolCalls, outputSchema, request, executeTool, saveCheckpoint, checkpoint }) {
@@ -41,10 +49,23 @@ export async function runTherapistTurn({ model, instructions, input, scope, maxT
 
   try {
     while (true) {
-      if (state.phase === 'process_response' || state.phase === 'parse_response') {
+      if (state.phase === 'process_response' || state.phase === 'process_final_response') {
         const response = state.provider_response;
         if (!response?.id) throw new Error('Provider response is missing an id');
         if (response.status !== 'completed') throw new Error(`Provider response did not complete (status: ${response.status ?? 'unknown'})`);
+        if (state.phase === 'process_final_response') {
+          if (functionCalls(response).length) throw new Error('Final provider response unexpectedly contains a function call');
+          const raw = outputText(response);
+          if (!raw) throw new Error('Completed provider response has no structured output text');
+          let result;
+          try { result = JSON.parse(raw); } catch { throw new Error('Completed provider response contains invalid JSON output'); }
+          if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('Structured output must be a JSON object');
+          state.final_output = result;
+          state.phase = 'completed';
+          state.status = 'completed';
+          await persist();
+          return { status: 'completed', output: result, checkpoint: structuredClone(state) };
+        }
         const calls = functionCalls(response);
         const callIds = calls.map((call) => call.call_id);
         if (callIds.some((id) => typeof id !== 'string' || !id) || new Set(callIds).size !== callIds.length) {
@@ -57,20 +78,15 @@ export async function runTherapistTurn({ model, instructions, input, scope, maxT
           await persist();
           continue;
         }
-        const raw = outputText(response);
-        if (!raw) throw new Error('Completed provider response has no structured output text');
-        let result;
-        try { result = JSON.parse(raw); } catch { throw new Error('Completed provider response contains invalid JSON output'); }
-        if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('Structured output must be a JSON object');
         state.pending_calls = [];
-        state.final_output = result;
-        state.phase = 'completed';
-        state.status = 'completed';
+        state.phase = 'final_request';
+        state.status = 'generating_final_output';
         await persist();
-        return { status: 'completed', output: result, checkpoint: structuredClone(state) };
+        continue;
       }
 
-      let nextInput = state.phase === 'request' ? structuredClone(state.input) : [];
+      const finalRequest = state.phase === 'final_request';
+      let nextInput = finalRequest ? finalInput(state) : (state.phase === 'request' ? structuredClone(state.input) : []);
       if (state.phase === 'tools_pending') {
         const outputsForCalls = [];
         for (const call of state.pending_calls) {
@@ -80,7 +96,7 @@ export async function runTherapistTurn({ model, instructions, input, scope, maxT
             const args = validateToolArguments(call.name, parseArguments(call));
             const value = await executeTool(call.name, args, structuredClone(scope), { run_id: scope.run_id, call_id: call.call_id, idempotency_key: `${scope.run_id}:${call.call_id}` });
             state.tool_call_count += 1;
-            saved = { call_id: call.call_id, idempotency_key: `${scope.run_id}:${call.call_id}`, value };
+            saved = { call_id: call.call_id, name: call.name, arguments: structuredClone(args), idempotency_key: `${scope.run_id}:${call.call_id}`, value };
             state.tool_results.push(saved);
             state.status = 'waiting_for_tools';
             await persist();
@@ -91,12 +107,13 @@ export async function runTherapistTurn({ model, instructions, input, scope, maxT
       }
 
       const response = await request({ model, instructions, input: nextInput, previous_response_id: state.previous_response_id ?? undefined,
-        tools: TOOL_DEFINITIONS, tool_choice: 'auto', text: { format: { type: 'json_schema', name: 'therapist_response', strict: true, schema: outputSchema } } });
+        tools: finalRequest ? [] : TOOL_DEFINITIONS, tool_choice: finalRequest ? 'none' : 'auto',
+        ...(finalRequest ? { text: { format: { type: 'json_schema', name: 'therapist_response', strict: true, schema: outputSchema } } } : {}) });
       state.provider_response = structuredClone(response ?? null);
       state.previous_response_id = response?.id ?? state.previous_response_id;
       state.last_response_status = response?.status ?? null;
-      state.phase = 'process_response';
-      state.status = 'processing_response';
+      state.phase = finalRequest ? 'process_final_response' : 'process_response';
+      state.status = finalRequest ? 'processing_final_response' : 'processing_response';
       await persist();
     }
   } catch (error) {

@@ -133,7 +133,8 @@ function provider({ output = finalOutput(), secondTool = true, onCall = async ()
     if (index === 2 && secondTool) return { id: 'resp-tool-2', status: 'completed', output: [{
       type: 'function_call', call_id: 'call-messages', name: 'get_messages', arguments: JSON.stringify({ thread_id: ids.thread, after_message_id: null, limit: 25 }),
     }] };
-    return { id: `resp-final-${index}`, status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(output) }] }] };
+    if (index === (secondTool ? 3 : 2)) return { id: `resp-evidence-${index}`, status: 'completed', output: [] };
+    return { id: `resp-final-${index}`, status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: JSON.stringify(output) }] }] };
   };
 }
 
@@ -160,6 +161,33 @@ test('worker reads through scoped tools and atomically publishes one reply plus 
     assert.equal(receipt.task_status, 'completed');
     assert.equal(receipt.message_id, ids.expressionOne);
     assert.equal(receipt.text, 'I want us to decide together.');
+  } finally { db.close(); }
+});
+
+test('worker leaves a queued expression uncovered when the final sources include only the triggering expression', async () => {
+  const db = await database();
+  try {
+    const output = finalOutput([ids.expressionOne]);
+    output.common_points = [];
+    const result = await runNextTherapistTask({ db, space_id: space, actor_id: ids.one, config, request: provider({ output }) });
+    assert.equal(result.status, 'completed');
+    const first = await db.prepare('SELECT status FROM therapist_tasks WHERE message_id=?').bind(ids.expressionOne).first();
+    const second = await db.prepare('SELECT status, covered_by FROM therapist_tasks WHERE message_id=?').bind(ids.expressionTwo).first();
+    assert.equal(first.status, 'completed');
+    assert.equal(second.status, 'queued');
+    assert.equal(second.covered_by, null);
+  } finally { db.close(); }
+});
+
+test('worker rejects a completed result that does not cite the expression that triggered its task', async () => {
+  const db = await database();
+  try {
+    const output = finalOutput();
+    output.source_message_ids = [ids.expressionTwo];
+    const result = await runNextTherapistTask({ db, space_id: space, actor_id: ids.one, config, request: provider({ output }) });
+    assert.deepEqual({ status: result.status, error_code: result.error_code }, { status: 'failed', error_code: 'invalid_output' });
+    assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM messages WHERE kind IN ('therapist_reply','understanding_updated')").first()).n, 0);
+    assert.equal((await db.prepare('SELECT status FROM therapist_tasks WHERE message_id=?').bind(ids.expressionOne).first()).status, 'failed');
   } finally { db.close(); }
 });
 
@@ -241,7 +269,7 @@ test('expired lease recovery keeps the frozen run ID and stale owner cannot save
     await enteredPromise;
     const before = await db.prepare('SELECT run_config_json FROM therapist_tasks WHERE message_id=?').bind(ids.expressionOne).first();
     const runId = JSON.parse(before.run_config_json).scope.run_id;
-    assert.equal(before.run_config_json.includes('OPENAI_API_KEY'), false);
+    assert.equal(before.run_config_json.includes('THERAPIST_API_KEY'), false);
     const thread = await db.prepare('SELECT message_seq FROM thread_versions WHERE space_id=? AND thread_id=?').bind(space, ids.thread).first();
     await submitConfirmedExpression({ db, scope: { actor_id: ids.two, space_id: space }, command: {
       message_id: ids.expressionThree, thread_id: ids.thread, expected_thread_seq: thread.message_seq,

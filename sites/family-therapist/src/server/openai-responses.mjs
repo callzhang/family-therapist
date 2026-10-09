@@ -1,4 +1,3 @@
-const RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses';
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 90_000;
 
@@ -39,16 +38,24 @@ function safeCode(value) {
   return typeof value === 'string' && /^[a-z0-9_]{1,80}$/i.test(value) ? value : null;
 }
 
-/** @param {{apiKey: string, fetchImpl?: typeof fetch, timeoutMs?: number}} options Makes a server-authenticated Responses call to one fixed endpoint. */
-export async function createOpenAIResponsesRequest({ apiKey, fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+/** @param {{apiKey: string, baseUrl: string, fetchImpl?: typeof fetch, timeoutMs?: number}} options Makes a server-authenticated Responses call to a configured HTTPS endpoint. */
+export async function createResponsesRequest({ apiKey, baseUrl, fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   if (typeof apiKey !== 'string' || !apiKey.trim()) throw new ResponsesProviderError('Provider credentials are unavailable.', { code: 'provider_unconfigured' });
+  let endpoint;
+  try {
+    const base = new URL(baseUrl);
+    if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash) throw new Error('invalid');
+    endpoint = `${base.href.replace(/\/$/, '')}/responses`;
+  } catch {
+    throw new ResponsesProviderError('Provider configuration is invalid.', { code: 'provider_unconfigured' });
+  }
   if (typeof fetchImpl !== 'function' || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1_000) throw new ResponsesProviderError('Provider configuration is invalid.', { code: 'provider_unconfigured' });
   return async function request(payload) {
     let response;
     try {
-      response = await fetchImpl(RESPONSES_ENDPOINT, {
+      response = await fetchImpl(endpoint, {
         method: 'POST', redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
-        headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+        headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json', 'user-agent': 'FamilyTherapist/1.0' },
         body: JSON.stringify(payload),
       });
     } catch {

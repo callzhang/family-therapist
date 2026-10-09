@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { runTherapistTurn } from '../../../../packages/therapist/responses.mjs';
-import { THERAPIST_OUTPUT_SCHEMA, validateTherapistOutput } from '../../../../packages/therapist/output.mjs';
+import { TherapistOutputValidationError, THERAPIST_OUTPUT_SCHEMA, validateTherapistOutput } from '../../../../packages/therapist/output.mjs';
 import { createQueryExecutor } from './queries.mjs';
 
 const nowIso = (value) => (value instanceof Date ? value : new Date(value)).toISOString();
@@ -278,6 +278,7 @@ async function publish({ db, task, leaseId, now, config, output }) {
   const validated = validateTherapistOutput(output, context);
   const finalNow = nowIso(now);
   const sourceIds = [...new Set(validated.source_message_ids)];
+  if (!sourceIds.includes(task.message_id)) throw new TherapistOutputValidationError('Therapist output must cite the expression that triggered this task');
   const replyBody = json({ text: validated.reply, source_message_ids: validated.source_message_ids,
     model: config.model, skill_version: config.skill_version, run_snapshot_seq: config.scope.snapshot_seq });
   const understandingBody = json({ common_points: validated.common_points, differences: validated.differences,
@@ -315,11 +316,12 @@ async function publish({ db, task, leaseId, now, config, output }) {
         task.space_id, task.thread_id, understandingBody, finalNow),
     db.prepare(`UPDATE therapist_tasks SET status='completed', covered_by=?
       WHERE space_id=? AND thread_id=? AND message_id<>? AND status='queued' AND input_thread_seq=? AND message_seq<=?
+        AND message_id IN (SELECT value FROM json_each(?))
         AND EXISTS (SELECT 1 FROM therapist_tasks leader INNER JOIN messages r ON r.message_id=leader.reply_message_id
           INNER JOIN messages u ON u.message_id=leader.understanding_message_id
           WHERE leader.message_id=? AND leader.status='completed' AND leader.completion_lease_id=?
             AND r.kind='therapist_reply' AND u.kind='understanding_updated')`)
-      .bind(task.message_id, task.space_id, task.thread_id, task.message_id, task.input_thread_seq, config.scope.snapshot_seq, task.message_id, leaseId),
+      .bind(task.message_id, task.space_id, task.thread_id, task.message_id, task.input_thread_seq, config.scope.snapshot_seq, json(sourceIds), task.message_id, leaseId),
   ];
   try {
     const result = await db.batch(statements);
