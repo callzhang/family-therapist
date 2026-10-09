@@ -13,22 +13,58 @@ function fail(message, checkpoint) { return { status: 'failed', error: new Thera
 function parseArguments(call) {
   try { return JSON.parse(call.arguments); } catch { throw new Error(`Invalid arguments JSON for ${call.name}`); }
 }
+function sameScope(a, b) {
+  return ['run_id', 'actor_id', 'space_id', 'snapshot_seq'].every((key) => Object.hasOwn(a ?? {}, key) && Object.hasOwn(b ?? {}, key) && a[key] === b[key]);
+}
 
 export async function runTherapistTurn({ model, instructions, input, scope, maxToolCalls, outputSchema, request, executeTool, saveCheckpoint, checkpoint }) {
   let state = checkpoint ? structuredClone(checkpoint) : {
-    run_id: scope?.run_id, model, previous_response_id: null, status: 'ready', tool_call_count: 0,
-    pending_calls: [], tool_results: [],
+    run_id: scope?.run_id, scope: structuredClone(scope ?? {}), model, input: structuredClone(input ?? []),
+    previous_response_id: null, status: 'ready', phase: 'request', tool_call_count: 0,
+    pending_calls: [], tool_results: [], provider_response: null,
   };
-  if (!model || !instructions || !Array.isArray(input) || !scope?.run_id || !Number.isInteger(maxToolCalls) || maxToolCalls < 0 || !outputSchema || typeof request !== 'function' || typeof executeTool !== 'function' || typeof saveCheckpoint !== 'function') {
+  if (!model || !instructions || !Array.isArray(input) || !scope?.run_id || !Object.hasOwn(scope, 'actor_id') || !Object.hasOwn(scope, 'space_id') || !Object.hasOwn(scope, 'snapshot_seq') || !Number.isInteger(maxToolCalls) || maxToolCalls < 0 || !outputSchema || typeof request !== 'function' || typeof executeTool !== 'function' || typeof saveCheckpoint !== 'function') {
     return fail('Invalid therapist turn configuration', state);
   }
-  if (state.run_id !== scope.run_id || state.model !== model) return fail('Checkpoint does not match run scope or model', state);
+  if (state.run_id !== scope.run_id || !sameScope(state.scope, scope) || state.model !== model) return fail('Checkpoint does not match authenticated scope or model', state);
   const persist = async () => { await saveCheckpoint(structuredClone(state)); };
-  let nextInput = checkpoint ? [] : input;
+  if (state.status === 'completed' && state.final_output && typeof state.final_output === 'object' && !Array.isArray(state.final_output)) {
+    return { status: 'completed', output: structuredClone(state.final_output), checkpoint: structuredClone(state) };
+  }
 
   try {
     while (true) {
-      if (state.pending_calls.length) {
+      if (state.phase === 'process_response' || state.phase === 'parse_response') {
+        const response = state.provider_response;
+        if (!response?.id) throw new Error('Provider response is missing an id');
+        if (response.status !== 'completed') throw new Error(`Provider response did not complete (status: ${response.status ?? 'unknown'})`);
+        const calls = functionCalls(response);
+        const callIds = calls.map((call) => call.call_id);
+        if (callIds.some((id) => typeof id !== 'string' || !id) || new Set(callIds).size !== callIds.length) {
+          throw new Error('Provider response contains missing or duplicate function call ids');
+        }
+        if (calls.length) {
+          state.pending_calls = calls.map(({ type, call_id, name, arguments: args }) => ({ type, call_id, name, arguments: args }));
+          state.phase = 'tools_pending';
+          state.status = 'waiting_for_tools';
+          await persist();
+          continue;
+        }
+        const raw = outputText(response);
+        if (!raw) throw new Error('Completed provider response has no structured output text');
+        let result;
+        try { result = JSON.parse(raw); } catch { throw new Error('Completed provider response contains invalid JSON output'); }
+        if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('Structured output must be a JSON object');
+        state.pending_calls = [];
+        state.final_output = result;
+        state.phase = 'completed';
+        state.status = 'completed';
+        await persist();
+        return { status: 'completed', output: result, checkpoint: structuredClone(state) };
+      }
+
+      let nextInput = state.phase === 'request' ? structuredClone(state.input) : [];
+      if (state.phase === 'tools_pending') {
         const outputsForCalls = [];
         for (const call of state.pending_calls) {
           let saved = state.tool_results.find((result) => result.call_id === call.call_id);
@@ -49,30 +85,12 @@ export async function runTherapistTurn({ model, instructions, input, scope, maxT
 
       const response = await request({ model, instructions, input: nextInput, previous_response_id: state.previous_response_id ?? undefined,
         tools: TOOL_DEFINITIONS, tool_choice: 'auto', text: { format: { type: 'json_schema', name: 'therapist_response', strict: true, schema: outputSchema } } });
+      state.provider_response = structuredClone(response ?? null);
       state.previous_response_id = response?.id ?? state.previous_response_id;
       state.last_response_status = response?.status ?? null;
-      const calls = functionCalls(response);
-      const callIds = calls.map((call) => call.call_id);
-      if (callIds.some((id) => typeof id !== 'string' || !id) || new Set(callIds).size !== callIds.length) {
-        throw new Error('Provider response contains missing or duplicate function call ids');
-      }
-      state.pending_calls = calls.map(({ type, call_id, name, arguments: args }) => ({ type, call_id, name, arguments: args }));
-      state.status = calls.length ? 'waiting_for_tools' : response?.status === 'completed' ? 'completed' : 'failed';
+      state.phase = 'process_response';
+      state.status = 'processing_response';
       await persist();
-
-      if (response?.status !== 'completed') throw new Error(`Provider response did not complete (status: ${response?.status ?? 'unknown'})`);
-      if (calls.length) continue;
-      if (!response.id) throw new Error('Completed provider response is missing an id');
-      const raw = outputText(response);
-      if (!raw) throw new Error('Completed provider response has no structured output text');
-      let result;
-      try { result = JSON.parse(raw); } catch { throw new Error('Completed provider response contains invalid JSON output'); }
-      if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('Structured output must be a JSON object');
-      state.pending_calls = [];
-      state.final_output = result;
-      state.status = 'completed';
-      await persist();
-      return { status: 'completed', output: result, checkpoint: structuredClone(state) };
     }
   } catch (error) {
     state.status = 'failed';
