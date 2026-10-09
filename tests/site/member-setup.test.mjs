@@ -58,6 +58,15 @@ function setupRequest(token, body) {
   });
 }
 
+function emptyStreamSetupRequest(token) {
+  return new Request('https://family.example/api/setup', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-length': '0' },
+    body: new ReadableStream({ start(controller) { controller.close(); } }),
+    duplex: 'half',
+  });
+}
+
 async function createDb() {
   const db = new D1Sqlite();
   await db.migrate();
@@ -85,6 +94,15 @@ test('bodyless authenticated setup creates both fixed members and hashes atomica
     const repeated = await initializeMemberSpace({ db, seedJson, request: setupRequest(tokens[1]) });
     assert.deepEqual(repeated, { status: 'initialized', actor_id: actors[1], role: roles[1] });
     assert.equal(db.batchCalls, 1);
+  } finally { db.close(); }
+});
+
+test('bodyless setup accepts a runtime request represented by a zero-byte stream', async () => {
+  const db = await createDb();
+  try {
+    const result = await initializeMemberSpace({ db, seedJson, request: emptyStreamSetupRequest(tokens[0]) });
+    assert.deepEqual(result, { status: 'initialized', actor_id: actors[0], role: roles[0] });
+    assert.deepEqual(await rowCounts(db), { members: 2, tokens: 2 });
   } finally { db.close(); }
 });
 

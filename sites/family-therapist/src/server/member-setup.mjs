@@ -1,4 +1,5 @@
 import { memberTokenDigestFromRequest, MemberTokenError } from './member-token.mjs';
+import { isRequestBodyEmpty } from './request-body.mjs';
 
 const MAX_SEED_BYTES = 4096;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -117,7 +118,7 @@ function tokenStatement(db, seed) {
 
 export async function initializeMemberSpace({ db, seedJson, request }) {
   if (!db || !request?.headers) throw new TypeError('db and request are required');
-  if (request.body !== null || (request.headers.get('content-length') !== null && request.headers.get('content-length') !== '0')) {
+  if (!await isRequestBodyEmpty(request)) {
     throw new MemberSetupError('request_body_not_allowed', 400);
   }
   const seed = parseMemberSetupSeed(seedJson);
