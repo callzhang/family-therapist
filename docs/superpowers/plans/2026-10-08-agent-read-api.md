@@ -25,4 +25,4 @@ Every page returns `{items,next_after_id,has_more,snapshot_seq}`. Initial full f
 - [x] Validate strict query name/argument boundary, limit and snapshot parsing. Reuse existing validator instead of a second divergent schema; no arbitrary SQL or member identity.
 - [x] Run focused and current root suites plus targeted TypeScript, ESLint, and build checks after token task commits. Primary's pre-generated two-member local-token HTTP acceptance is still pending.
 - [x] Document implemented endpoints versus the uninstalled local client/heartbeat/upgrader and private Site outer-access prerequisite. No publishing, scheduling, secrets, or new Site.
-- [ ] Commit only owned files. The primary's live HTTP QA is a separate pending acceptance gate.
+- [x] Commit only owned files. The primary's live HTTP QA is a separate pending acceptance gate.
