@@ -112,6 +112,22 @@ test('install lock spans release publication and existing nested symlinks are re
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
+test('authenticated release fetch runs under the install lock', async () => {
+  const directory = await temp();
+  try {
+    const release = await canonical();
+    let enteredFetch; let continueFetch;
+    const entered = new Promise((resolve) => { enteredFetch = resolve; });
+    const hold = new Promise((resolve) => { continueFetch = resolve; });
+    const updating = updateSkillRelease({ client: { async getSkillRelease() { enteredFetch(); await hold; return release; } }, notice: notice(release), installDirectory: directory });
+    await entered;
+    await assert.rejects(installSkillRelease({ release, notice: notice(release), installDirectory: directory }), /live process owns/);
+    continueFetch();
+    assert.equal((await updating).installed, true);
+    assert.deepEqual(JSON.parse(await readFile(path.join(directory, 'current.json'), 'utf8')), notice(release));
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 test('release bundle uses the configured fixed origin and member authentication headers', async () => {
   const calls = [];
   const member = { actor_id: 'partner-husband', role: 'husband', space_id: '00000000-0000-4000-8000-000000000001', member_token: 'A'.repeat(43) };

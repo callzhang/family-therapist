@@ -150,6 +150,11 @@ export async function installSkillRelease(options) {
 export async function updateSkillRelease({ client, notice, installDirectory, consultationBusy = false }) {
   if (!client || typeof client.getSkillRelease !== 'function') throw new TypeError('client.getSkillRelease is required');
   if (!notice) fail('authenticated sync did not include a Skill release notice');
-  const bundle = await client.getSkillRelease();
-  return installSkillRelease({ release: bundle, notice, installDirectory, consultationBusy });
+  if (typeof installDirectory !== 'string' || !path.isAbsolute(installDirectory)) throw new TypeError('absolute installDirectory is required');
+  await privateDirectory(installDirectory, true);
+  const unlock = await acquireLock(installDirectory);
+  try {
+    const bundle = await client.getSkillRelease();
+    return await installSkillReleaseUnlocked({ release: bundle, notice, installDirectory, consultationBusy });
+  } finally { await unlock(); }
 }
