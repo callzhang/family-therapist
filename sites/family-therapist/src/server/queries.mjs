@@ -4,6 +4,7 @@ export const QUERY_ERROR_STATUS = Object.freeze({
   thread_not_found: 404, message_not_found: 404, invalid_cursor: 404, agreement_thread_not_found: 404,
   invalid_result_set: 503, invalid_message_json: 500, invalid_record: 500,
 });
+export const THERAPIST_MISSING_QUERY_CODES = Object.freeze(['thread_not_found', 'message_not_found', 'invalid_cursor', 'agreement_thread_not_found']);
 
 export class QueryReadError extends Error {
   constructor(code, message, options) {
@@ -12,6 +13,11 @@ export class QueryReadError extends Error {
     this.code = code;
     this.status = QUERY_ERROR_STATUS[code] ?? 500;
   }
+}
+
+function missingRecord(scope, code, message) {
+  if (scope.purpose === 'therapist' && THERAPIST_MISSING_QUERY_CODES.includes(code)) return { error: { code } };
+  throw new QueryReadError(code, message);
 }
 
 const DEFAULT_LIMIT = 25;
@@ -88,7 +94,7 @@ async function listThreads(db, args, scope) {
       WHERE tv.space_id = ? AND tv.thread_id = ? AND tv.message_seq <= ?
         AND tv.message_seq = (SELECT MAX(v.message_seq) FROM thread_versions v WHERE v.space_id = tv.space_id AND v.thread_id = tv.thread_id AND v.message_seq <= ?)
         AND (? IS NULL OR tv.status = ?)`, scope.space_id, args.after_thread_id, scope.snapshot_seq, scope.snapshot_seq, args.status, args.status);
-    if (!cursor) throw new QueryReadError('invalid_cursor', 'Unknown or out-of-scope thread cursor');
+    if (!cursor) return missingRecord(scope, 'invalid_cursor', 'Unknown or out-of-scope thread cursor');
   }
   const limit = limitValue(args.limit);
   const found = await rows(db, `SELECT tv.thread_id, tv.message_seq, tv.title, tv.status, tv.summary
@@ -105,18 +111,18 @@ async function listThreads(db, args, scope) {
 
 async function getThread(db, args, scope) {
   const row = await latestThread(db, scope, args.thread_id);
-  if (!row) throw new QueryReadError('thread_not_found', 'Unknown or out-of-scope thread');
+  if (!row) return missingRecord(scope, 'thread_not_found', 'Unknown or out-of-scope thread');
   return threadResult(row);
 }
 
 async function getMessages(db, args, scope) {
   const thread = await latestThread(db, scope, args.thread_id);
-  if (!thread) throw new QueryReadError('thread_not_found', 'Unknown or out-of-scope thread');
+  if (!thread) return missingRecord(scope, 'thread_not_found', 'Unknown or out-of-scope thread');
   transcriptAllowed(scope, args.thread_id, thread);
   let cursorSeq = null;
   if (args.after_message_id) {
     const cursor = await one(db, `SELECT seq FROM messages WHERE space_id = ? AND thread_id = ? AND message_id = ? AND seq <= ?`, scope.space_id, args.thread_id, args.after_message_id, scope.snapshot_seq);
-    if (!cursor) throw new QueryReadError('invalid_cursor', 'Unknown or out-of-scope message cursor');
+    if (!cursor) return missingRecord(scope, 'invalid_cursor', 'Unknown or out-of-scope message cursor');
     cursorSeq = cursor.seq;
   }
   const limit = limitValue(args.limit);
@@ -130,7 +136,7 @@ async function getMessages(db, args, scope) {
 
 async function getMessage(db, args, scope) {
   const row = await one(db, `SELECT seq, message_id, thread_id, kind, actor_id, body_json, created_at FROM messages WHERE space_id = ? AND message_id = ? AND seq <= ?`, scope.space_id, args.message_id, scope.snapshot_seq);
-  if (!row) throw new QueryReadError('message_not_found', 'Unknown or out-of-scope message');
+  if (!row) return missingRecord(scope, 'message_not_found', 'Unknown or out-of-scope message');
   const thread = row.thread_id ? await latestThread(db, scope, row.thread_id) : null;
   transcriptAllowed(scope, row.thread_id, thread);
   return parseMessage(row);
@@ -139,7 +145,7 @@ async function getMessage(db, args, scope) {
 async function getAgreements(db, args, scope) {
   if (args.thread_id != null) {
     const thread = await latestThread(db, scope, args.thread_id);
-    if (!thread) throw new QueryReadError('agreement_thread_not_found', 'Unknown or out-of-scope agreement thread');
+    if (!thread) return missingRecord(scope, 'agreement_thread_not_found', 'Unknown or out-of-scope agreement thread');
   }
   let cursor = null;
   if (args.after_agreement_id) {
@@ -147,7 +153,7 @@ async function getAgreements(db, args, scope) {
       WHERE av.space_id = ? AND av.agreement_id = ? AND av.message_seq <= ?
         AND av.message_seq = (SELECT MAX(v.message_seq) FROM agreement_versions v WHERE v.space_id = av.space_id AND v.agreement_id = av.agreement_id AND v.message_seq <= ?)
         AND av.confirmed = 1 AND (av.thread_id IS NULL OR ? IS NULL OR av.thread_id = ?)`, scope.space_id, args.after_agreement_id, scope.snapshot_seq, scope.snapshot_seq, args.thread_id, args.thread_id);
-    if (!cursor) throw new QueryReadError('invalid_cursor', 'Unknown or out-of-scope agreement cursor');
+    if (!cursor) return missingRecord(scope, 'invalid_cursor', 'Unknown or out-of-scope agreement cursor');
   }
   const limit = limitValue(args.limit);
   const found = await rows(db, `SELECT av.agreement_id, av.thread_id, av.message_seq, av.version, av.text,
