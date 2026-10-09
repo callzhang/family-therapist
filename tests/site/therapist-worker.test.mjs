@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { getExpressionReceipt, submitConfirmedExpression } from '../../sites/family-therapist/src/server/intake.mjs';
 import { retryFailedTherapistTask, runNextTherapistTask } from '../../sites/family-therapist/src/server/therapist-worker.mjs';
+import { createQueryExecutor } from '../../sites/family-therapist/src/server/queries.mjs';
 import { THERAPIST_OUTPUT_SCHEMA } from '../../packages/therapist/output.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -19,6 +20,7 @@ const ids = {
   expressionOne: '00000000-0000-4000-8000-000000000101',
   expressionTwo: '00000000-0000-4000-8000-000000000102',
   expressionThree: '00000000-0000-4000-8000-000000000103',
+  missingMessage: '00000000-0000-4000-8000-000000000199',
 };
 
 class Statement {
@@ -162,6 +164,73 @@ test('worker reads through scoped tools and atomically publishes one reply plus 
     assert.equal(receipt.task_status, 'completed');
     assert.equal(receipt.message_id, ids.expressionOne);
     assert.equal(receipt.text, 'I want us to decide together.');
+  } finally { db.close(); }
+});
+
+test('worker returns an in-scope missing-message tool error so the model can query real evidence and complete', async () => {
+  const db = await database();
+  try {
+    const before = (await db.prepare('SELECT COUNT(*) AS n FROM messages').first()).n;
+    const snapshot = (await db.prepare('SELECT seq FROM messages WHERE message_id=?').bind(ids.expressionTwo).first()).seq;
+    const directQuery = createQueryExecutor(db);
+    const queryScope = { actor_id: ids.one, space_id: space, snapshot_seq: snapshot, thread_id: ids.thread, consultation_thread_id: ids.thread };
+    await assert.rejects(directQuery('get_message', { message_id: ids.missingMessage }, { ...queryScope, purpose: 'member_view' }),
+      (error) => error.code === 'message_not_found' && error.status === 404);
+    assert.deepEqual(await directQuery('get_message', { message_id: ids.missingMessage }, { ...queryScope, purpose: 'therapist' }),
+      { error: { code: 'message_not_found' } });
+
+    const requests = [];
+    const result = await runNextTherapistTask({ db, space_id: space, actor_id: ids.one, config,
+      request: async (payload) => {
+        requests.push(payload);
+        if (requests.length === 1) return { id: 'resp-missing', status: 'completed', output: [{
+          type: 'function_call', call_id: 'call-missing', name: 'get_message', arguments: JSON.stringify({ message_id: ids.missingMessage }),
+        }] };
+        if (requests.length === 2) {
+          assert.deepEqual(JSON.parse(payload.input[0].output), { error: { code: 'message_not_found' } });
+          assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM messages').first()).n, before);
+          return { id: 'resp-real-thread', status: 'completed', output: [{
+            type: 'function_call', call_id: 'call-real-thread', name: 'get_messages', arguments: JSON.stringify({ thread_id: ids.thread, after_message_id: null, limit: 25 }),
+          }] };
+        }
+        if (requests.length === 3) {
+          const toolResult = JSON.parse(payload.input[0].output);
+          assert.deepEqual(toolResult.items.map((message) => message.message_id), [ids.anchor, ids.expressionOne, ids.expressionTwo]);
+          assert.equal(toolResult.snapshot_seq, snapshot);
+          return { id: 'resp-finalize', status: 'completed', output: [] };
+        }
+        return { id: 'resp-final', status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: JSON.stringify(finalOutput()) }] }] };
+      } });
+
+    assert.equal(result.status, 'completed', JSON.stringify(result));
+    assert.equal(requests.length, 4);
+    assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM messages WHERE kind IN ('therapist_reply','understanding_updated')").first()).n, 2);
+    assert.equal((await db.prepare('SELECT status FROM therapist_tasks WHERE message_id=?').bind(ids.expressionOne).first()).status, 'completed');
+    assert.equal((await db.prepare('SELECT status, covered_by FROM therapist_tasks WHERE message_id=?').bind(ids.expressionTwo).first()).covered_by, ids.expressionOne);
+  } finally { db.close(); }
+});
+
+test('worker still aborts a transcript-forbidden read without publishing or exposing records', async () => {
+  const db = await database();
+  try {
+    const foreignThread = '00000000-0000-4000-8000-000000000011';
+    const foreignAnchor = '00000000-0000-4000-8000-000000000021';
+    await db.prepare('INSERT INTO messages(message_id,space_id,thread_id,kind,actor_id,body_json,created_at) VALUES(?,?,?,?,?,?,?)')
+      .bind(foreignAnchor, space, foreignThread, 'thread_created', ids.one, '{}', 'foreign-anchor').run();
+    const anchor = await db.prepare('SELECT seq FROM messages WHERE message_id=?').bind(foreignAnchor).first();
+    await db.prepare('INSERT INTO thread_versions(space_id,thread_id,message_seq,title,status,summary) VALUES(?,?,?,?,?,?)')
+      .bind(space, foreignThread, anchor.seq, 'Other topic', 'active', '').run();
+    const result = await runNextTherapistTask({ db, space_id: space, actor_id: ids.one, config, request: async () => ({
+      id: 'resp-forbidden-thread', status: 'completed', output: [{
+        type: 'function_call', call_id: 'call-forbidden-thread', name: 'get_messages',
+        arguments: JSON.stringify({ thread_id: foreignThread, after_message_id: null, limit: 25 }),
+      }],
+    }) });
+    assert.equal(result.status, 'failed');
+    assert.equal(result.error_code, 'transcript_forbidden');
+    assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM messages WHERE kind IN ('therapist_reply','understanding_updated')").first()).n, 0);
+    const checkpoint = JSON.parse((await db.prepare('SELECT checkpoint_json FROM therapist_tasks WHERE message_id=?').bind(ids.expressionOne).first()).checkpoint_json);
+    assert.equal(checkpoint.tool_results.length, 0);
   } finally { db.close(); }
 });
 
@@ -482,6 +551,84 @@ test('explicit retry resumes an orchestration-failed checkpoint after optional t
     assert.equal(completed.status, 'completed');
     assert.equal(completed.retry_count, before.retry_count + 1);
     assert.equal(completed.checkpoint_json, null);
+  } finally { db.close(); }
+});
+
+test('explicit retry resumes a legacy missing-record checkpoint through the model error result without changing run identity', async () => {
+  const db = await database();
+  try {
+    const originalPrepare = db.prepare.bind(db);
+    let failMessageRead = true;
+    db.prepare = (sql) => {
+      const statement = originalPrepare(sql);
+      if (!failMessageRead || !sql.includes('FROM messages WHERE space_id = ? AND message_id = ? AND seq <= ?')) return statement;
+      return { bind: (...values) => {
+        const bound = statement.bind(...values);
+        return { first: async () => { failMessageRead = false; throw new Error('legacy query failure'); } };
+      } };
+    };
+    const failed = await runNextTherapistTask({ db, space_id: space, actor_id: ids.one, config, request: async () => ({
+      id: 'resp-pending-missing', status: 'completed', output: [{
+        type: 'function_call', call_id: 'call-missing-legacy', name: 'get_message', arguments: JSON.stringify({ message_id: ids.missingMessage }),
+      }],
+    }) });
+    assert.equal(failed.status, 'failed');
+    const before = await db.prepare('SELECT run_config_json, checkpoint_json, reply_message_id, understanding_message_id, retry_count FROM therapist_tasks WHERE message_id=?').bind(ids.expressionOne).first();
+    const checkpoint = JSON.parse(before.checkpoint_json);
+    assert.equal(checkpoint.phase, 'tools_pending');
+    assert.equal(checkpoint.pending_calls[0].arguments, JSON.stringify({ message_id: ids.missingMessage }));
+    db.prepare = originalPrepare;
+    const exhaustedCheckpoint = { ...checkpoint, tool_call_count: config.max_tool_calls };
+    await db.prepare("UPDATE therapist_tasks SET last_error_code='message_not_found', last_error_status=404, checkpoint_json=? WHERE message_id=?")
+      .bind(JSON.stringify(exhaustedCheckpoint), ids.expressionOne).run();
+    const exhausted = await retryFailedTherapistTask({ db, space_id: space, actor_id: ids.two, message_id: ids.expressionOne });
+    assert.equal(exhausted.status, 'retry_unavailable');
+    const invalidArgsCheckpoint = { ...checkpoint, pending_calls: checkpoint.pending_calls.map((call) => ({ ...call, arguments: '{"message_id":"invalid"}' })) };
+    await db.prepare('UPDATE therapist_tasks SET checkpoint_json=? WHERE message_id=?').bind(JSON.stringify(invalidArgsCheckpoint), ids.expressionOne).run();
+    assert.equal((await retryFailedTherapistTask({ db, space_id: space, actor_id: ids.two, message_id: ids.expressionOne })).status, 'retry_unavailable');
+    const changedScopeCheckpoint = { ...checkpoint, scope: { ...checkpoint.scope, actor_id: ids.two } };
+    await db.prepare('UPDATE therapist_tasks SET checkpoint_json=? WHERE message_id=?').bind(JSON.stringify(changedScopeCheckpoint), ids.expressionOne).run();
+    assert.equal((await retryFailedTherapistTask({ db, space_id: space, actor_id: ids.two, message_id: ids.expressionOne })).status, 'retry_unavailable');
+    await db.prepare('UPDATE therapist_tasks SET retry_count=3 WHERE message_id=?').bind(ids.expressionOne).run();
+    assert.equal((await retryFailedTherapistTask({ db, space_id: space, actor_id: ids.two, message_id: ids.expressionOne })).status, 'retry_unavailable');
+    await db.prepare('UPDATE therapist_tasks SET retry_count=? WHERE message_id=?').bind(before.retry_count, ids.expressionOne).run();
+    await db.prepare('UPDATE therapist_tasks SET checkpoint_json=? WHERE message_id=?').bind(before.checkpoint_json, ids.expressionOne).run();
+    await db.prepare("UPDATE therapist_tasks SET last_error_code='message_not_found', last_error_status=404 WHERE message_id=?").bind(ids.expressionOne).run();
+
+    const accepted = await retryFailedTherapistTask({ db, space_id: space, actor_id: ids.two, message_id: ids.expressionOne });
+    assert.equal(accepted.status, 'queued');
+    const afterAccept = await db.prepare('SELECT run_config_json, checkpoint_json, reply_message_id, understanding_message_id, retry_count FROM therapist_tasks WHERE message_id=?').bind(ids.expressionOne).first();
+    assert.equal(afterAccept.run_config_json, before.run_config_json);
+    assert.equal(afterAccept.checkpoint_json, before.checkpoint_json);
+    assert.equal(afterAccept.reply_message_id, before.reply_message_id);
+    assert.equal(afterAccept.understanding_message_id, before.understanding_message_id);
+
+    const requests = [];
+    const resumed = await runNextTherapistTask({ db, space_id: space, actor_id: ids.one, config, task_message_id: ids.expressionOne,
+      request: async (payload) => {
+        requests.push(payload);
+        if (requests.length === 1) {
+          assert.equal(payload.previous_response_id, 'resp-pending-missing');
+          assert.deepEqual(JSON.parse(payload.input[0].output), { error: { code: 'message_not_found' } });
+          return { id: 'resp-resume-thread', status: 'completed', output: [{
+            type: 'function_call', call_id: 'call-resume-thread', name: 'get_messages', arguments: JSON.stringify({ thread_id: ids.thread, after_message_id: null, limit: 25 }),
+          }] };
+        }
+        if (requests.length === 2) {
+          const output = JSON.parse(payload.input[0].output);
+          assert.deepEqual(output.items.map((message) => message.message_id), [ids.anchor, ids.expressionOne, ids.expressionTwo]);
+          return { id: 'resp-resume-finalize', status: 'completed', output: [] };
+        }
+        return { id: 'resp-resumed-final', status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: JSON.stringify(finalOutput()) }] }] };
+      } });
+    assert.equal(resumed.status, 'completed', JSON.stringify(resumed));
+    assert.equal(requests.length, 3);
+    const completed = await db.prepare('SELECT status, retry_count, reply_message_id, understanding_message_id FROM therapist_tasks WHERE message_id=?').bind(ids.expressionOne).first();
+    assert.equal(completed.status, 'completed');
+    assert.equal(completed.retry_count, before.retry_count + 1);
+    assert.equal(completed.reply_message_id, before.reply_message_id);
+    assert.equal(completed.understanding_message_id, before.understanding_message_id);
+    assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM messages WHERE kind IN ('therapist_reply','understanding_updated')").first()).n, 2);
   } finally { db.close(); }
 });
 

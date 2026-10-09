@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { runTherapistTurn } from '../../../../packages/therapist/responses.mjs';
 import { validateToolArguments } from '../../../../packages/therapist/tools.mjs';
 import { TherapistOutputValidationError, THERAPIST_OUTPUT_SCHEMA, validateTherapistOutput } from '../../../../packages/therapist/output.mjs';
-import { createQueryExecutor } from './queries.mjs';
+import { createQueryExecutor, THERAPIST_MISSING_QUERY_CODES } from './queries.mjs';
 
 const nowIso = (value) => (value instanceof Date ? value : new Date(value)).toISOString();
 const json = (value) => JSON.stringify(value);
@@ -305,7 +305,8 @@ export async function retryFailedTherapistTask({ db, space_id: spaceId, actor_id
   const providerRetryable = RETRYABLE_PROVIDER_CODES.has(task.last_error_code) || task.last_error_status === 429 ||
     (Number.isInteger(task.last_error_status) && task.last_error_status >= 500 && task.last_error_status <= 599);
   const orchestrationRetryable = task.last_error_code === 'orchestration_failed' && retryableToolsCheckpoint(task, runConfig);
-  if (!providerRetryable && !orchestrationRetryable) {
+  const missingQueryRetryable = task.last_error_status === 404 && THERAPIST_MISSING_QUERY_CODES.includes(task.last_error_code) && retryableToolsCheckpoint(task, runConfig);
+  if (!providerRetryable && !orchestrationRetryable && !missingQueryRetryable) {
     return { status: 'retry_unavailable', message_id: messageId, error_code: task.last_error_code ?? 'retry_limit_reached' };
   }
   const result = await run(db, `UPDATE therapist_tasks SET status='queued', retry_count=retry_count+1
