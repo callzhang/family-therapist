@@ -1,0 +1,8 @@
+{
+  "name": "family-therapist-planning",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-site-root.mjs"
+  }
+}

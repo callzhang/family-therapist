@@ -4,3 +4,6 @@
 .local-members/
 connection.local.json
 .local-assistant-state/
+/dist/
+/drizzle/
+/.site-root-build-*/
