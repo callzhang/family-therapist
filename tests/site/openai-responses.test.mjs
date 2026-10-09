@@ -97,11 +97,18 @@ test('the adapter constructs requests in the deployed Workerd runtime without un
     }};
   `;
   const mf = new Miniflare({
-    compatibilityDate: '2026-05-15', compatibilityFlags: ['nodejs_compat'],
-    modules: [
-      { type: 'ESModule', path: 'worker.mjs', contents: workerSource },
-      { type: 'ESModule', path: 'adapter.mjs', contents: adapterSource },
-    ],
+    workers: [{
+      config: {
+        name: 'responses-adapter-test', compatibilityDate: '2026-05-15', compatibilityFlags: ['nodejs_compat'],
+        manifest: {
+          mainModule: 'worker.mjs',
+          modules: {
+            'worker.mjs': { type: 'esm', contents: workerSource },
+            'adapter.mjs': { type: 'esm', contents: adapterSource },
+          },
+        },
+      },
+    }],
   });
   try {
     const result = await mf.dispatchFetch('http://localhost/');
