@@ -1,0 +1,9 @@
+# Sites source checkout root
+
+The registered Site stays integrated from `sites/family-therapist/`; its Vite `sites()` plugin and Site identity are unchanged. The repository root is the Git checkout that the official Sites source helper packages. Its `.openai/hosting.json` must remain an exact JSON match for the app manifest so both paths name the same registered Site and D1/R2 bindings.
+
+Run `npm run build` at the repository root when preparing that checkout. `scripts/build-site-root.mjs` runs the app's existing build script, verifies the generated Worker entry and client assets, checks that the compiled Worker binding names match the source manifest, and validates the app Drizzle SQL files against the ordered journal and snapshots. After all checks pass, it replaces only generated root `dist/` and `drizzle/` with copies of the app output. Both root directories and the temporary staging folder are Git-ignored; dependencies remain only under the app.
+
+The wrapper refuses manifest drift, incomplete or inconsistent Worker artifacts, migration/journal mismatch, symlinks in generated inputs, and non-directory targets at the ignored root output paths. It does not modify app source, app migrations, registration, credentials, hosted database state, or a deployed Site.
+
+For a local packaging dry run, invoke the installed Sites helper `scripts/prepare-site-build.cjs` with the repository root as project and a temporary destination outside root `dist/`. It should classify this output as a Worker and prepare `dist/server/index.js`. The official `package-site.sh` subsequently stages the root worker output and copies the root `drizzle/` tree into `dist/.openai/drizzle/`, including `meta/_journal.json`. This dry run verifies artifact layout only; it does not save a Site version or deploy.
