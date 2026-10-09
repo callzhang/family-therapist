@@ -6,6 +6,14 @@ From the repository root, run `node scripts/provision-member-tokens.mjs` once on
 
 Run the generated seed SQL only against the intended local D1 database after migrations. The provisioner does not connect to or write any database. Re-running it validates and reuses the existing tokens. If the directory has partial files, inconsistent contents, or unsafe permissions, it stops for manual inspection. It never silently replaces a token.
 
+For a newly deployed hosted D1 database, apply the reviewed migrations first. Configure the server-only `THERAPIST_MEMBER_SEED` value with the exact JSON shape below, using the same space ID, fixed actors and roles, and SHA-256 digests of the two privately provisioned tokens:
+
+```json
+{"space_id":"<uuid>","members":[{"actor_id":"partner-husband","role":"husband","token_sha256":"<64 lowercase hex characters>"},{"actor_id":"partner-wife","role":"wife","token_sha256":"<64 lowercase hex characters>"}]}
+```
+
+Then each partner calls `POST /api/setup` with their own `Authorization: Bearer <member_token>` header and no request body. The caller must match one configured digest. The endpoint initializes both fixed members and token digests in one database batch, and returns only the caller's actor and role. An exact repeat is safe after readback. Any partial state, revoked token, or mismatch returns a conflict and is not repaired or rotated automatically; investigate the database and server configuration before proceeding. Setup never runs during reads and the request cannot choose a space or actor.
+
 Configure each personal Agent locally with its own token and send `Authorization: Bearer <member_token>` to its APIs. A partner may also enter that token in the website's password-style connection field; the server sets a session-only `HttpOnly; SameSite=Strict` cookie, with `Secure` on HTTPS. Browser read requests then use that cookie, while Agent API requests continue to use the bearer header. The page offers a session exit action. Do not put the token in a source file, scheduled prompt, URL, request body, or log. Missing or invalid credentials receive HTTP 401 with a stable error code. Revoking a token sets `revoked_at`; removing its membership also invalidates both browser and Agent access.
 
-Member tokens bind application membership; they do not change Sites audience or the outer private-access requirement. Hosted use also needs the actual Sites access configuration and a private deployment that admits the intended people before either partner can reach the page. Those hosted settings and unattended cloud execution require separate setup and verification.
+Member tokens bind application membership; they do not change Sites audience or the outer private-access requirement. Hosted use also needs the actual Sites access configuration and a private deployment that admits the intended people before either partner can reach the page. The seed environment value must remain server-side and must never be placed in a client bundle, checked into source, or printed in logs. These setup instructions do not deploy or verify the hosted service.
