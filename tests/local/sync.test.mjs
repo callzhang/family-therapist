@@ -91,3 +91,85 @@ test('a failed message-file read leaves the old cursor and retained batch availa
   const result = await syncFormalMessages({ client, member, stateDirectory: root });
   assert.equal(result.cursor, id1); assert.equal(result.saved, 1); assert.equal(result.complete, true);
 });
+
+test('stale-claim cleanup cannot unlink a later unique live owner claim', async (t) => {
+  const root = await temp(t); const lockDirectory = path.join(root, '.sync-locks');
+  await mkdir(lockDirectory, { mode: 0o700 });
+  const stalePid = process.pid + 10_000_000;
+  const staleNonce = '123e4567-e89b-42d3-a456-426614174009';
+  const stalePath = path.join(lockDirectory, `claim-${stalePid}-${staleNonce}.json`);
+  await writeFile(stalePath, `${JSON.stringify({ pid: stalePid, nonce: staleNonce })}\n`, { mode: 0o600 });
+  let releaseFetch; let enteredFetch; const entered = new Promise((resolve) => { enteredFetch = resolve; });
+  const blocked = new Promise((resolve) => { releaseFetch = resolve; });
+  const client = { async getUpdates() { enteredFetch(); await blocked; return page([],{snapshot_seq:0}); } };
+  const running = syncFormalMessages({ client, member, stateDirectory: root });
+  await entered;
+  assert.equal(await lstat(stalePath).then(() => true, () => false), false);
+  const liveNonce = '123e4567-e89b-42d3-a456-426614174010';
+  const livePath = path.join(lockDirectory, `claim-${process.pid}-${liveNonce}.json`);
+  await writeFile(livePath, `${JSON.stringify({ pid: process.pid, nonce: liveNonce })}\n`, { mode: 0o600 });
+  releaseFetch(); await running;
+  assert.equal(await lstat(livePath).then(() => true, () => false), true);
+});
+
+test('overlapping claimants never run synchronization concurrently, including with stale claims', async (t) => {
+  const root = await temp(t); const lockDirectory = path.join(root, '.sync-locks');
+  await mkdir(lockDirectory, { mode: 0o700 });
+  const stalePid = process.pid + 10_000_001;
+  const staleNonce = '123e4567-e89b-42d3-a456-426614174011';
+  await writeFile(path.join(lockDirectory, `claim-${stalePid}-${staleNonce}.json`), `${JSON.stringify({ pid: stalePid, nonce: staleNonce })}\n`, { mode: 0o600 });
+  let fetchCount = 0; let releaseFetch; let enteredFetch; const entered = new Promise((resolve) => { enteredFetch = resolve; });
+  const blocker = new Promise((resolve) => { releaseFetch = resolve; });
+  const client = { async getUpdates() { fetchCount += 1; enteredFetch(); await blocker; return page([],{snapshot_seq:0}); } };
+  const first = syncFormalMessages({ client, member, stateDirectory: root });
+  await entered;
+  await assert.rejects(syncFormalMessages({ client, member, stateDirectory: root }), /live process owns/);
+  assert.equal(fetchCount, 1);
+  releaseFetch(); await first;
+  assert.equal(fetchCount, 1);
+});
+
+test('actual updates records with string, array, and null bodies remain intact', async (t) => {
+  const root = await temp(t);
+  const ids = [id1, id2, '123e4567-e89b-42d3-a456-426614174003'];
+  const bodies = ['legacy plain text', ['legacy', 2, null], null];
+  const records = ids.map((message_id, index) => ({ ...record(message_id, index + 1), body: bodies[index] }));
+  const result = await syncFormalMessages({ client: { getUpdates: async () => page(records, { snapshot_seq: 3 }) }, member, stateDirectory: root });
+  assert.equal(result.saved, 3);
+  for (let index = 0; index < ids.length; index += 1) {
+    const saved = JSON.parse(await readFile(path.join(root, `${ids[index]}.json`), 'utf8'));
+    assert.deepEqual(saved, records[index]);
+  }
+});
+
+test('simultaneous stale-claim cleanup keeps unique live claims and never overlaps sync work', async (t) => {
+  const root = await temp(t); const lockDirectory = path.join(root, '.sync-locks');
+  await mkdir(lockDirectory, { mode: 0o700 });
+  const stalePid = process.pid + 10_000_002;
+  const staleNonce = '123e4567-e89b-42d3-a456-426614174012';
+  const stalePath = path.join(lockDirectory, `claim-${stalePid}-${staleNonce}.json`);
+  await writeFile(stalePath, `${JSON.stringify({ pid: stalePid, nonce: staleNonce })}\n`, { mode: 0o600 });
+  let callCount = 0; let releaseFetch; let enteredFetch; const entered = new Promise((resolve) => { enteredFetch = resolve; });
+  const blocker = new Promise((resolve) => { releaseFetch = resolve; });
+  const client = { async getUpdates() { callCount += 1; enteredFetch(); await blocker; return page([],{snapshot_seq:0}); } };
+  const runs = [
+    syncFormalMessages({ client, member, stateDirectory: root }),
+    syncFormalMessages({ client, member, stateDirectory: root }),
+  ];
+  const outcomesPromise = Promise.allSettled(runs);
+  await Promise.race([entered, new Promise((resolve) => setTimeout(resolve, 100))]);
+  if (callCount > 0) {
+    assert.equal(callCount, 1);
+    assert.equal(await lstat(stalePath).then(() => true, () => false), false);
+    const claimFiles = (await (await import('node:fs/promises')).readdir(lockDirectory)).filter((name) => name.startsWith('claim-'));
+    assert.equal(claimFiles.length, 1);
+    const activeClaim = JSON.parse(await readFile(path.join(lockDirectory, claimFiles[0]), 'utf8'));
+    assert.equal(activeClaim.pid, process.pid);
+  }
+  releaseFetch();
+  const outcomes = await outcomesPromise;
+  assert.ok(outcomes.filter((outcome) => outcome.status === 'fulfilled').length <= 1);
+  assert.ok(callCount <= 1);
+  assert.equal(await lstat(stalePath).then(() => true, () => false), false);
+  assert.deepEqual((await (await import('node:fs/promises')).readdir(lockDirectory)).filter((name) => name.startsWith('claim-')), []);
+});

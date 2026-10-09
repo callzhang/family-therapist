@@ -16,7 +16,7 @@ test('client sends credentials only to configured origin and refuses redirects',
   assert.equal(observed.url.origin, 'https://private.example');
   assert.equal(observed.options.redirect, 'manual');
   assert.equal(observed.options.headers.authorization, `Bearer ${member.member_token}`);
-  assert.equal(observed.options.headers['cf-access-token'], connection.site_access_token);
+  assert.equal(observed.options.headers['OAI-Sites-Authorization'], `Bearer ${connection.site_access_token}`);
   await assert.rejects(client.getDiscussion(), (error) => { assert.equal(error.message.includes(member.member_token), false); assert.equal(error.message.includes(connection.site_access_token), false); return true; });
 });
 
@@ -42,4 +42,41 @@ test('fetch failures do not expose request credentials', async () => {
     assert.equal(error.message.includes(member.member_token), false);
     return true;
   });
+});
+
+test('all supported discussion command discriminators preserve the exact request', async () => {
+  const commands = [
+    { message_id: id, confirmed: true, action: { type: 'create', id, title: 'A topic' } },
+    { message_id: id, confirmed: true, action: { type: 'propose', id, kind: 'consensus', thread_id: id, target_id: null, text: 'Exact agreement' } },
+    { message_id: id, confirmed: true, action: { type: 'approve', id, text: 'Exact agreement' } },
+  ];
+  const bodies = [];
+  const client = createAgentClient({ member, connection, fetchImpl: async (url, options) => {
+    assert.equal(url.pathname, '/api/discussion'); bodies.push(JSON.parse(options.body)); return Response.json({ message_id: id });
+  } });
+  for (const command of commands) await client.executeDiscussion(command);
+  assert.deepEqual(bodies, commands);
+});
+
+test('native fetch refuses an external redirect without forwarding either credential', async (t) => {
+  const { createServer } = await import('node:http');
+  const { once } = await import('node:events');
+  const externalRequests = [];
+  let receivedAtConfiguredOrigin;
+  const external = createServer((request, response) => { externalRequests.push(request.headers); response.end('{}'); });
+  const configured = createServer((request, response) => {
+    receivedAtConfiguredOrigin = request.headers;
+    response.writeHead(302, { location: `http://127.0.0.1:${external.address().port}/capture` }); response.end();
+  });
+  external.listen(0, '127.0.0.1'); await once(external, 'listening');
+  configured.listen(0, '127.0.0.1'); await once(configured, 'listening');
+  t.after(async () => {
+    await Promise.all([new Promise((resolve, reject) => external.close((error) => error ? reject(error) : resolve())), new Promise((resolve, reject) => configured.close((error) => error ? reject(error) : resolve()))]);
+  });
+  const local = { ...connection, base_url: `http://127.0.0.1:${configured.address().port}` };
+  const client = createAgentClient({ member, connection: local });
+  await assert.rejects(client.getDiscussion(), /redirect/);
+  assert.equal(receivedAtConfiguredOrigin.authorization, `Bearer ${member.member_token}`);
+  assert.equal(receivedAtConfiguredOrigin['oai-sites-authorization'], `Bearer ${connection.site_access_token}`);
+  assert.deepEqual(externalRequests, []);
 });
