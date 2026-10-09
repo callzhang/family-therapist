@@ -1,4 +1,4 @@
-import { open, lstat, mkdir, readFile, rename, unlink } from 'node:fs/promises';
+import { open, lstat, mkdir, readFile, rename, unlink, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { validateMember } from './client.mjs';
@@ -63,7 +63,7 @@ function validatePage(page, { member, requestedCursor, requestedSnapshot, previo
   for (const item of page.items) {
     if (!item || Object.getPrototypeOf(item) !== Object.prototype || JSON.stringify(Object.keys(item).sort()) !== JSON.stringify(['actor_id', 'body', 'created_at', 'kind', 'message_id', 'seq', 'space_id', 'thread_id'])) fail('server returned a malformed record');
     assertUuid(item.message_id, 'message_id');
-    if (item.space_id !== member.space_id || (item.thread_id !== null && (typeof item.thread_id !== 'string' || !UUID.test(item.thread_id))) || typeof item.actor_id !== 'string' || !item.actor_id || typeof item.kind !== 'string' || !item.kind || typeof item.created_at !== 'string' || !item.created_at || !item.body || Object.getPrototypeOf(item.body) !== Object.prototype || !Number.isSafeInteger(item.seq) || item.seq <= seq || item.seq > page.snapshot_seq) fail('server record scope or sequence is invalid');
+    if (item.space_id !== member.space_id || (item.thread_id !== null && (typeof item.thread_id !== 'string' || !UUID.test(item.thread_id))) || typeof item.actor_id !== 'string' || !item.actor_id || typeof item.kind !== 'string' || !item.kind || typeof item.created_at !== 'string' || !item.created_at || !Object.hasOwn(item, 'body') || JSON.stringify(item.body) === undefined || !Number.isSafeInteger(item.seq) || item.seq <= seq || item.seq > page.snapshot_seq) fail('server record scope or sequence is invalid');
     if (seen.has(item.message_id)) fail('server returned a duplicate UUID within one page');
     seen.add(item.message_id); seq = item.seq; lastId = item.message_id;
   }
@@ -74,38 +74,83 @@ function validatePage(page, { member, requestedCursor, requestedSnapshot, previo
   return { nextCursor: lastId, nextSeq: seq, snapshotSeq: page.snapshot_seq };
 }
 async function acquireLock(directory) {
-  const lockPath = path.join(directory, '.sync.lock');
-  const owner = { pid: process.pid, nonce: randomUUID() };
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const handle = await open(lockPath, 'wx', 0o600);
-      await handle.writeFile(`${JSON.stringify(owner)}\n`); await handle.sync(); await handle.close();
-      return async () => {
-        try {
-          const current = await readFile(lockPath, 'utf8');
-          const before = await lstat(lockPath);
-          const again = await readFile(lockPath, 'utf8');
-          if (current === `${JSON.stringify(owner)}\n` && again === current && before.isFile() && !before.isSymbolicLink()) await unlink(lockPath);
-        } catch (error) { if (error?.code !== 'ENOENT') throw error; }
-      };
-    } catch (error) {
-      if (error?.code !== 'EEXIST') throw error;
-      const stat = await assertSafeFile(lockPath, { missing: false });
-      const raw = await readFile(lockPath, 'utf8');
-      let prior;
-      try { prior = JSON.parse(raw); } catch { fail('sync lock is corrupt; inspect it manually'); }
-      if (!prior || !Number.isSafeInteger(prior.pid) || prior.pid < 1 || typeof prior.nonce !== 'string') fail('sync lock is corrupt; inspect it manually');
-      try { process.kill(prior.pid, 0); fail('another live process owns the sync lock'); }
-      catch (probeError) {
-        if (probeError?.message?.startsWith('Sync stopped: another live')) throw probeError;
-        if (probeError?.code !== 'ESRCH') fail('cannot prove the sync lock owner is gone; inspect it manually');
-      }
-      const again = await lstat(lockPath);
-      if (!again.isFile() || again.isSymbolicLink() || again.ino !== stat.ino || await readFile(lockPath, 'utf8') !== raw) fail('sync lock changed during stale-owner check');
-      await unlink(lockPath);
+  const lockDirectory = path.join(directory, '.sync-locks');
+  await mkdir(lockDirectory, { recursive: true, mode: 0o700 });
+  const directoryStat = await lstat(lockDirectory);
+  if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink() || (directoryStat.mode & 0o077) !== 0) fail('sync lock directory must be private and must not be a symlink');
+  const nonce = randomUUID();
+  const claimName = `claim-${process.pid}-${nonce}.json`;
+  const claimPath = path.join(lockDirectory, claimName);
+  const claim = { pid: process.pid, nonce };
+  const claimText = `${JSON.stringify(claim)}\n`;
+  const tempPath = path.join(lockDirectory, `.pending-${process.pid}-${nonce}`);
+  let handle;
+  let published = false;
+  try {
+    handle = await open(tempPath, 'wx', 0o600);
+    await handle.writeFile(claimText, 'utf8');
+    await handle.sync();
+    await handle.close(); handle = null;
+    await rename(tempPath, claimPath);
+    published = true;
+    const dirHandle = await open(lockDirectory, 'r');
+    try { await dirHandle.sync(); } finally { await dirHandle.close(); }
+  } catch (error) {
+    if (handle) await handle.close();
+    try { await unlink(tempPath); } catch (cleanupError) { if (cleanupError?.code !== 'ENOENT') throw cleanupError; }
+    if (published) {
+      try { if (await readFile(claimPath, 'utf8') === claimText) await unlink(claimPath); } catch (cleanupError) { if (cleanupError?.code !== 'ENOENT') throw cleanupError; }
     }
+    throw error;
   }
-  fail('could not acquire sync lock');
+
+  async function removeOwnedClaim() {
+    try {
+      const first = await readFile(claimPath, 'utf8');
+      const firstStat = await lstat(claimPath);
+      const second = await readFile(claimPath, 'utf8');
+      if (first === claimText && second === first && firstStat.isFile() && !firstStat.isSymbolicLink()) await unlink(claimPath);
+    } catch (error) { if (error?.code !== 'ENOENT') throw error; }
+  }
+
+  try {
+    const entries = await readdir(lockDirectory);
+    let liveConflict = false;
+    for (const entry of entries) {
+      if (entry.startsWith('.pending-')) continue;
+      const match = /^claim-([1-9][0-9]*)-([0-9a-f-]{36})\.json$/.exec(entry);
+      if (!match) fail('sync lock directory contains an unknown entry; inspect it manually');
+      const otherPath = path.join(lockDirectory, entry);
+      let otherStat; let raw;
+      try { otherStat = await lstat(otherPath); raw = await readFile(otherPath, 'utf8'); }
+      catch (readError) { if (readError?.code === 'ENOENT') continue; throw readError; }
+      if (!otherStat.isFile() || otherStat.isSymbolicLink() || (otherStat.mode & 0o077) !== 0) fail('sync lock claim is unsafe; inspect it manually');
+      let owner;
+      try { owner = JSON.parse(raw); } catch { fail('sync lock claim is corrupt; inspect it manually'); }
+      const ownerPid = Number(match[1]);
+      if (!Number.isSafeInteger(ownerPid) || ownerPid < 1 || !UUID.test(match[2])) fail('sync lock filename is malformed; inspect it manually');
+      if (!owner || Object.getPrototypeOf(owner) !== Object.prototype || JSON.stringify(Object.keys(owner).sort()) !== '["nonce","pid"]' || owner.pid !== ownerPid || owner.nonce !== match[2]) fail('sync lock claim does not match its filename; inspect it manually');
+      if (entry === claimName) continue;
+      let alive = true;
+      try { process.kill(ownerPid, 0); }
+      catch (probeError) {
+        if (probeError?.code === 'ESRCH') alive = false;
+        else fail('cannot prove a sync lock owner is gone; inspect it manually');
+      }
+      if (alive) { liveConflict = true; continue; }
+      try {
+        const beforeDelete = await lstat(otherPath);
+        const verifyText = await readFile(otherPath, 'utf8');
+        if (!beforeDelete.isFile() || beforeDelete.isSymbolicLink() || beforeDelete.dev !== otherStat.dev || beforeDelete.ino !== otherStat.ino || verifyText !== raw) fail('stale sync lock claim changed during owner check');
+        await unlink(otherPath);
+      } catch (unlinkError) { if (unlinkError?.code !== 'ENOENT') throw unlinkError; }
+    }
+    if (liveConflict) fail('another live process owns the sync lock');
+  } catch (error) {
+    await removeOwnedClaim();
+    throw error;
+  }
+  return removeOwnedClaim;
 }
 
 export async function syncFormalMessages({ client, member: rawMember, stateDirectory }) {

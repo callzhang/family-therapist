@@ -10,7 +10,7 @@ Each local Agent uses its own pre-generated member credential file from `.local-
 {"base_url":"https://your-private-site.example","site_access_token":null}
 ```
 
-Use the real deployed origin and actual Sites outer-access token when required. The connection file must also be private. The client refuses URL credentials, paths, query strings, fragments, non-local HTTP, and redirects. Member and Sites credentials are sent only to the configured origin. They are never CLI arguments, logged values, Skill content, or shared source.
+Use the real deployed origin and actual Sites outer-access token when required. For the installed Sites outer-access contract, the client sends this token as `OAI-Sites-Authorization: Bearer <token>`. The connection file must also be private. The client refuses URL credentials, paths, query strings, fragments, non-local HTTP, and redirects. Member and Sites credentials are sent only to the configured origin. They are never CLI arguments, logged values, Skill content, or shared source.
 
 ## Read and sync
 

@@ -48,15 +48,15 @@ function assertDiscussion(command) {
   uuid(command.message_id, 'message_id');
   const a = command.action;
   if (a.type === 'create') {
-    if (Object.keys(a).sort().join(',') !== 'id,title') throw new TypeError('Invalid create action');
+    if (Object.keys(a).sort().join(',') !== 'id,title,type') throw new TypeError('Invalid create action');
     uuid(a.id, 'action.id'); text(a.title, 'action.title');
   } else if (a.type === 'propose') {
-    if (Object.keys(a).sort().join(',') !== 'id,kind,target_id,text,thread_id' || !discussionKinds.has(a.kind)) throw new TypeError('Invalid proposal action');
+    if (Object.keys(a).sort().join(',') !== 'id,kind,target_id,text,thread_id,type' || !discussionKinds.has(a.kind)) throw new TypeError('Invalid proposal action');
     uuid(a.id, 'action.id'); uuid(a.thread_id, 'action.thread_id'); text(a.text, 'action.text');
     if ((a.kind === 'switch') !== (a.target_id !== null)) throw new TypeError('target_id must match proposal kind');
     if (a.target_id !== null) uuid(a.target_id, 'action.target_id');
   } else if (a.type === 'approve') {
-    if (Object.keys(a).sort().join(',') !== 'id,text') throw new TypeError('Invalid approval action');
+    if (Object.keys(a).sort().join(',') !== 'id,text,type') throw new TypeError('Invalid approval action');
     uuid(a.id, 'action.id'); text(a.text, 'action.text');
   } else throw new TypeError('Unknown discussion action');
   if (new TextEncoder().encode(JSON.stringify(command)).byteLength > 64 * 1024) throw new TypeError('Discussion command is too large');
@@ -86,7 +86,7 @@ export function createAgentClient({ member: rawMember, connection: rawConnection
     const url = new URL(pathname, `${connection.base_url}/`);
     if (query) for (const [key, value] of Object.entries(query)) if (value !== null && value !== undefined) url.searchParams.set(key, String(value));
     const headers = { authorization: `Bearer ${member.member_token}`, accept: 'application/json' };
-    if (connection.site_access_token) headers['cf-access-token'] = connection.site_access_token;
+    if (connection.site_access_token) headers['OAI-Sites-Authorization'] = `Bearer ${connection.site_access_token}`;
     if (body !== undefined) headers['content-type'] = 'application/json';
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
