@@ -1,6 +1,6 @@
 # 家庭关系咨询系统
 
-本仓库实现一对伴侣共用的咨询工作流。当前包含：表达 intake 与双人确认协议、持久讨论和历史接口、Responses 工具循环及检查点恢复模块、只读网站查询、成员 Token 与浏览器会话、以及本地 Agent 客户端、同步和运行时模块。网站目前只读；这些实现和本地测试不证明云端模型调用或自动 heartbeat 已在运行。
+本仓库实现一对伴侣共用的咨询工作流。已用清楚标记为虚构的双人案例跑通私密 Sites → 公开 configured provider Responses 网关 → 正式回复与自动理解 → UUID 增量读取 → 文件导出与双方确认结案。线上任务用 provider3.8-27b 完成于约 73 秒，原表达、回复和检查点身份保持不变，双方收据与网页结果均已读回。网站仍为只读；各自实际 Agent 的安装、每小时 heartbeat 和关闭客户端后的无人值守执行仍需独立配置与验收。
 
 源码仓库：[callzhang/family-therapist](https://github.com/callzhang/family-therapist)（私有）。网站：[我们之间](https://YOUR_SITE_HOSTNAME)（保持 Sites 原有私密访问范围）。服务端模型配置、密钥和成员校验信息分别存储在 Sites；本地草稿、真实 Token 与测试数据库不包含在源码或发布包内。
 
@@ -16,8 +16,8 @@ npm run build
 
 网站源代码位于 [`sites/family-therapist`](sites/family-therapist)。成员 Token 的本地配置和新 D1 初始化流程见[成员 Token 运维说明](docs/operations/member-tokens.md)。不要将明文 Token 或服务端 seed 配置提交到仓库。
 
-生产运行仍有明确门槛：需先在目标 D1 应用审查过的迁移，再通过服务端 `THERAPIST_MEMBER_SEED` 和已认证的 `POST /api/setup` 初始化空空间，并配置只允许预期用户访问的私密 Sites 外层访问策略。部署、schema 变更和权限配置需要按当前平台能力分别执行与验证。实际 Responses API 生成还需要可用的 Provider 余额；此前运行因余额耗尽受阻，见[运行验证记录](docs/verification/2026-10-08-responses-runtime.md)。持久化 Worker、运行时健康、heartbeat/定时执行和外部结果回执也必须在目标环境单独配置并验证；构建、测试或部署成功本身不证明它们已运行。
+现有 Sites 的模型配置、D1 迁移、成员初始化和 R2 导出已验证；新部署仍需独立完成这些操作。本地客户端在本人确认并提交完整表达后，可调用 processTherapist 处理排队表达，等待状态流，再通过原 UUID 收据和同步获取正式回复。断流先查原收据；失败后的有限重试是显式操作，不重新提交表达，也不自动批准共识。证据与操作边界见[configured provider 线上验证记录](docs/verification/2026-10-09-provider-responses-runtime.md)及[本地客户端说明](docs/operations/local-client.md)。
 
 产品范围和阶段状态见[系统设计](docs/superpowers/specs/2026-10-08-family-therapist-design.md)及[路线图](docs/superpowers/plans/2026-10-08-family-therapist-roadmap.md)。
 
-发布检查包括全部 179 项确定性测试、应用类型检查和 Worker 构建。生产依赖的 5 项已知漏洞已升级至补丁版本，同一生产依赖审计现为 0 项；此结论不包括开发依赖或咨询质量评估，详见[依赖验证说明](docs/operations/production-dependency-security.md)。
+当前发布检查包括 211 项确定性测试、应用类型检查、Worker 构建及真实托管模型与文件读回。此前生产依赖的 5 项已知漏洞已升级至补丁版本，该次生产依赖审计为 0 项；此结论不包括开发依赖、未重跑的审计、GitHub CI 或一般咨询质量评估，详见[依赖验证说明](docs/operations/production-dependency-security.md)。
