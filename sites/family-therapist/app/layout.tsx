@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Starter Project",
-  description: "A clean starting point for building your site.",
+  title: "Between Us · Shared Understanding",
+  description: "A private shared space for relationship consultation and understanding.",
   other: {
-    "codex-preview": "development",
+    "codex-preview": "relationship-consultation",
   },
   icons: {
     icon: "/favicon.svg",
