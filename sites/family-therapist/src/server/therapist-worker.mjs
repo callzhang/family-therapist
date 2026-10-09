@@ -405,7 +405,7 @@ export async function runNextTherapistTask({ db, space_id: spaceId, actor_id: ac
     const memberDescription = runConfig.scope.members.map(({ user_id, role }) => `${user_id} (${role})`).join('; ');
     const started = await runTherapistTurn({
       model: runConfig.model, instructions: runConfig.instructions,
-      input: [{ role: 'user', content: `Process this confirmed expression in the current consultation. Expression UUID: ${task.message_id}. Author member identity: ${source.actor_id}; role: ${sourceMember?.role ?? 'unknown'}. Current two member identities and roles: ${memberDescription}. Exact expression text: ${text}` }],
+      input: [{ role: 'user', content: `Process this confirmed expression in the current consultation. Authoritative current consultation thread UUID: ${turnScope.thread_id}. Frozen message snapshot sequence: ${turnScope.snapshot_seq}. Expression UUID: ${task.message_id}. Author member identity: ${source.actor_id}; role: ${sourceMember?.role ?? 'unknown'}. Current two member identities and roles: ${memberDescription}. Exact expression text: ${text}` }],
       scope: turnScope, maxToolCalls: runConfig.max_tool_calls, outputSchema: runConfig.output_schema,
       request, executeTool: (name, args, scope) => executor(name, args, { ...scope, purpose: 'therapist' }),
       saveCheckpoint: (checkpoint) => saveCheckpoint(db, task, leaseId, nowIso(clock()), leaseMs, checkpoint),
