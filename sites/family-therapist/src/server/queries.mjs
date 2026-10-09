@@ -64,7 +64,7 @@ function threadResult(row) {
   return { thread_id: row.thread_id, title: row.title, status: row.status, summary: row.summary, message_seq: row.message_seq };
 }
 function agreementResult(row) {
-  return { agreement_id: row.agreement_id, thread_id: row.thread_id, version: row.version, text: row.text, message_seq: row.message_seq, confirmation_message_id: row.confirmation_message_id, confirmed_by: row.confirmed_by, confirmed_at: row.confirmed_at };
+  return { agreement_id: row.agreement_id, thread_id: row.thread_id, version: row.version, text: row.text, message_seq: row.message_seq, confirmation_message_id: row.confirmation_message_id, confirmation_actor_id: row.confirmation_actor_id, confirmed_at: row.confirmed_at };
 }
 
 async function latestThread(db, scope, threadId) {
@@ -151,7 +151,7 @@ async function getAgreements(db, args, scope) {
   }
   const limit = limitValue(args.limit);
   const found = await rows(db, `SELECT av.agreement_id, av.thread_id, av.message_seq, av.version, av.text,
-      confirmation.message_id AS confirmation_message_id, confirmation.actor_id AS confirmed_by, confirmation.created_at AS confirmed_at
+      confirmation.message_id AS confirmation_message_id, confirmation.actor_id AS confirmation_actor_id, confirmation.created_at AS confirmed_at
     FROM agreement_versions av
     INNER JOIN messages confirmation ON confirmation.space_id = av.space_id AND confirmation.seq = av.message_seq
     WHERE av.space_id = ? AND av.message_seq <= ?

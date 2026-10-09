@@ -144,11 +144,13 @@ test('agreements return confirmed snapshot versions and global principles', asyn
     assert.deepEqual(result.items.map((item) => item.text).sort(), ['Current agreement', 'Global principle']);
     const current = result.items.find((item) => item.text === 'Current agreement');
     assert.equal(current.confirmation_message_id, ids.message2);
-    assert.equal(current.confirmed_by, ids.actor);
+    assert.equal(current.confirmation_actor_id, ids.actor);
     assert.equal(current.confirmed_at, '2026-10-08T00:00:02Z');
     assert.equal(result.items.some((item) => item.text === 'Unconfirmed'), false);
     const first = await execute('get_agreements', { thread_id: ids.consultation, after_agreement_id: null, limit: 1 }, { ...scope, snapshot_seq: scope.snapshot_seq + 1 });
+    assert.equal(first.items[0].agreement_id, ids.agreement2, 'the earlier confirmation sequence comes first even though its UUID sorts later');
     const last = await execute('get_agreements', { thread_id: ids.consultation, after_agreement_id: first.next_after_id, limit: 10 }, { ...scope, snapshot_seq: scope.snapshot_seq + 1 });
+    assert.equal(last.items[0].agreement_id, ids.agreement1);
     assert.equal(last.has_more, false);
     assert.equal(last.next_after_id, last.items.at(-1).agreement_id);
     const empty = await execute('get_agreements', { thread_id: ids.consultation, after_agreement_id: last.next_after_id, limit: 10 }, { ...scope, snapshot_seq: scope.snapshot_seq + 1 });
