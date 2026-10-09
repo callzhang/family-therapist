@@ -31,4 +31,26 @@ The permanent repair returns private NDJSON status from drain/retry after prefli
 
 The permanent implementation passed all 202 deterministic tests independently at root, TypeScript checking, the Site build, and focused code review. The temporary lifetime probe was removed before publishing the permanent implementation. Private deployment `appgdep_6ac8c3d765688191bde3e67a030bffe7` succeeded from source `c5471d50eb81b078651274a55cadfd99875bb402`, with environment revision 2. The production local client then maintained the actual hosted task stream for 91 seconds and received a terminal `failed/provider_transport_error`, at the adapter's single-call timeout. No Therapist reply was published. Tunnel logs recorded origin `/v1/responses` cancellation at that same deadline; available LiteLLM access logs have no timestamps or request IDs to associate a completion with that call. A subsequent local-to-public minimal request received a provider response in 0.627 seconds, proving current gateway reachability from the local machine, not hosted consultation success.
 
-Final hosted output, UUID increments, two-member QA settlement, and export readback remain pending while the provider layer is diagnosed using fixed synthetic probes. The retained original synthetic task and source UUIDs are preserved. The existing private audience is preserved. No scheduler or unattended trigger is installed by this repair.
+An authenticated minimal hosted request subsequently completed in 0.349 seconds, establishing the full Site-to-Qwen route. The original failed checkpoint's next request also completed locally in 30.906 seconds. A later hosted retry received a completed provider response but failed before another provider call because `list_threads {}` omitted mandatory nullable filters. The query contract now makes filters, cursors, and limits optional with their explicit existing null defaults, retaining required UUIDs and rejecting unknown or invalid arguments. Explicit bounded retry accepts a failed tools checkpoint only after validating its complete frozen scope, current arguments, and remaining budget. Provider responses that reuse executed call IDs fail rather than loop indefinitely; checkpoint resume still reuses persisted results.
+
+### Completed hosted acceptance
+
+Source `92cb605a21d46b590083becf3f408adfd623c762` was published by private deployment `appgdep_6ac8ccecf1288191b9e806becb83bc03`, environment revision 2. The production member client restored the original task and completed it in 72.691 seconds, retaining source, run and output UUIDs. No provider output was substituted, no database task was manually repaired, and the three-retry limit remained enforced.
+
+| Check | Live readback |
+| --- | --- |
+| Original expressions | `dcef203f-d1d4-4d19-b0b6-588cd8170a65` and `9f1dcd6d-3bcc-4dcf-9edc-e42a932b45a8` |
+| Persisted reply | `a7b1a8cd-edf6-44eb-bcce-9d343ee2aab6`, model `qwen3.8-27b`, frozen snapshot 3 |
+| Automatic understanding | `11f36a0c-4482-406c-b961-48b871b88c95`: two common points, two differences, one tentative hypothesis and one unconfirmed proposal |
+| Sources and receipts | Both expression UUIDs cited; both receipts completed; exactly one reply and one understanding |
+| Incremental fetch | Fetch after the wife's expression returned the two output messages, exclusively after that cursor |
+| Repeat processing | Idle in 0.153 seconds; no second reply |
+| QA closure | Both member credentials approved the same explicit fictional-test settlement; thread read back as settled |
+| Conversation files | R2-backed Markdown 6179 bytes and JSONL 7406 bytes, downloaded and checked against the original expressions and reply UUID |
+| Independent agreement file | JSONL contained the separately confirmed fictional QA settlement |
+| Browser | Actual hosted reply and right-side common points inspected; formal agreement was empty before QA closure |
+| Skill release | Hosted 2026-10-09.1 notice verified and installed in an isolated private QA directory using the production sync/update client |
+
+Root reviewed the actual reply for complete sentences, attribution, one-topic focus and tentative interpretation. All material is clearly labeled fictional system acceptance; the generated proposal and QA settlement do not represent the couple's real agreement. Records remain available and the QA thread no longer occupies the active slot. These examples establish integration, not clinical effectiveness.
+
+The temporary provider probe and checkpoint-inspection endpoint were removed for final publication. The permanent suite contains 211 passing tests; application type checking and the rebuilt Site also pass. The existing private audience is preserved. A configured local client calls processTherapist after confirmed submission. No cloud unattended trigger, installation on either person's actual Agent, or hourly heartbeat is claimed by this acceptance.
