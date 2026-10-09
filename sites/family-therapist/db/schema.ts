@@ -45,11 +45,16 @@ export const therapistTasks = sqliteTable('therapist_tasks', {
   understandingMessageId: text('understanding_message_id'),
   candidateId: text('candidate_id'),
   coveredBy: text('covered_by'),
+  completionLeaseId: text('completion_lease_id'),
   lastErrorCode: text('last_error_code'),
+  lastErrorStatus: integer('last_error_status'),
+  lastErrorRequestId: text('last_error_request_id'),
   lastErrorAt: text('last_error_at'),
+  retryCount: integer('retry_count').notNull().default(0),
 }, (table) => [
   check('therapist_tasks_status_check', sql`${table.status} IN ('queued', 'running', 'failed', 'obsolete', 'completed')`),
   check('therapist_tasks_input_thread_seq_check', sql`${table.inputThreadSeq} >= 0`),
+  check('therapist_tasks_retry_count_check', sql`${table.retryCount} >= 0 AND ${table.retryCount} <= 3`),
   index('therapist_tasks_status_created').on(table.status, table.createdAt),
   uniqueIndex('therapist_tasks_one_running_per_thread').on(table.spaceId, table.threadId).where(sql`${table.status} = 'running'`),
 ]);

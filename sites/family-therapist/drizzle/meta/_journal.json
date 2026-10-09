@@ -43,6 +43,13 @@
       "when": 1791516109430,
       "tag": "0005_magical_goblin_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1791516885332,
+      "tag": "0006_marvelous_skreet",
+      "breakpoints": true
     }
   ]
 }

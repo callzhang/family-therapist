@@ -16,16 +16,20 @@ CREATE TABLE `__new_therapist_tasks` (
 	`understanding_message_id` text,
 	`candidate_id` text,
 	`covered_by` text,
+	`completion_lease_id` text,
 	`last_error_code` text,
+	`last_error_status` integer,
+	`last_error_request_id` text,
 	`last_error_at` text,
+	`retry_count` integer DEFAULT 0 NOT NULL,
 	FOREIGN KEY (`message_id`) REFERENCES `messages`(`message_id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`message_seq`) REFERENCES `messages`(`seq`) ON UPDATE no action ON DELETE no action,
 	CONSTRAINT "therapist_tasks_status_check" CHECK("__new_therapist_tasks"."status" IN ('queued', 'running', 'failed', 'obsolete', 'completed')),
-	CONSTRAINT "therapist_tasks_input_thread_seq_check" CHECK("__new_therapist_tasks"."input_thread_seq" >= 0)
+	CONSTRAINT "therapist_tasks_input_thread_seq_check" CHECK("__new_therapist_tasks"."input_thread_seq" >= 0),
+	CONSTRAINT "therapist_tasks_retry_count_check" CHECK("__new_therapist_tasks"."retry_count" >= 0 AND "__new_therapist_tasks"."retry_count" <= 3)
 );
 --> statement-breakpoint
--- Existing task statuses are preserved. Runtime explicitly obsoletes rows whose captured source version remains zero.
-INSERT INTO `__new_therapist_tasks`("message_id", "message_seq", "space_id", "thread_id", "status", "created_at", "input_thread_seq") SELECT "message_id", "message_seq", "space_id", "thread_id", "status", "created_at", 0 FROM `therapist_tasks`;--> statement-breakpoint
+INSERT INTO `__new_therapist_tasks`("message_id", "message_seq", "space_id", "thread_id", "status", "created_at", "input_thread_seq", "lease_id", "lease_expires_at", "run_snapshot_seq", "run_config_json", "checkpoint_json", "reply_message_id", "understanding_message_id", "candidate_id", "covered_by", "completion_lease_id", "last_error_code", "last_error_status", "last_error_request_id", "last_error_at", "retry_count") SELECT "message_id", "message_seq", "space_id", "thread_id", "status", "created_at", "input_thread_seq", "lease_id", "lease_expires_at", "run_snapshot_seq", "run_config_json", "checkpoint_json", "reply_message_id", "understanding_message_id", "candidate_id", "covered_by", NULL, "last_error_code", NULL, NULL, "last_error_at", 0 FROM `therapist_tasks`;--> statement-breakpoint
 DROP TABLE `therapist_tasks`;--> statement-breakpoint
 ALTER TABLE `__new_therapist_tasks` RENAME TO `therapist_tasks`;--> statement-breakpoint
 PRAGMA foreign_keys=ON;--> statement-breakpoint
