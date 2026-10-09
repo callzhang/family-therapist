@@ -61,4 +61,12 @@ These tests cover the local synthetic protocol modules only. They do not verify 
 
 ## Commit
 
-Commit and final repository status are recorded below after the documentation commit is created.
+Documentation commit: `a7e37e1 docs: define production obligations for protocol adapters`.
+
+The requested `git status --short` and `git log -3 --oneline` were run after the commit. The only remaining worktree change was ` M docs/superpowers/plans/2026-10-08-family-therapist-protocol.md`, updated independently by the primary agent to check off Task 1/2. It was left unstaged and untouched. The three latest commits were:
+
+```text
+a7e37e1 docs: define production obligations for protocol adapters
+31cb3bb feat(protocol): model bilateral thread and agreement transitions
+ded51c6 feat(protocol): define UUID cursor and history snapshot semantics
+```
