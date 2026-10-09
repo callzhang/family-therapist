@@ -1,7 +1,14 @@
 import { TOOL_DEFINITIONS, validateToolArguments } from './tools.mjs';
 
 export class TherapistTurnError extends Error {
-  constructor(message, checkpoint) { super(message); this.name = 'TherapistTurnError'; this.checkpoint = checkpoint; }
+  constructor(message, checkpoint, metadata = {}) {
+    super(message);
+    this.name = 'TherapistTurnError';
+    this.checkpoint = checkpoint;
+    this.code = metadata.code ?? 'orchestration_failed';
+    this.status = metadata.status ?? null;
+    this.request_id = metadata.request_id ?? null;
+  }
 }
 
 function outputs(response) { return Array.isArray(response?.output) ? response.output : []; }
@@ -9,7 +16,7 @@ function functionCalls(response) { return outputs(response).filter((item) => ite
 function outputText(response) {
   return outputs(response).flatMap((item) => item.content ?? []).filter((part) => part.type === 'output_text').map((part) => part.text).join('');
 }
-function fail(message, checkpoint) { return { status: 'failed', error: new TherapistTurnError(message, structuredClone(checkpoint)), checkpoint: structuredClone(checkpoint) }; }
+function fail(message, checkpoint, metadata) { return { status: 'failed', error: new TherapistTurnError(message, structuredClone(checkpoint), metadata), checkpoint: structuredClone(checkpoint) }; }
 function parseArguments(call) {
   try { return JSON.parse(call.arguments); } catch { throw new Error(`Invalid arguments JSON for ${call.name}`); }
 }
@@ -95,7 +102,18 @@ export async function runTherapistTurn({ model, instructions, input, scope, maxT
   } catch (error) {
     state.status = 'failed';
     state.error = error instanceof Error ? error.message : String(error);
-    try { await persist(); } catch (saveError) { return fail(`${state.error}; checkpoint save failed: ${saveError instanceof Error ? saveError.message : String(saveError)}`, state); }
-    return fail(state.error, state);
+    const code = typeof error?.code === 'string' && /^[a-z0-9_]{1,80}$/i.test(error.code) ? error.code : 'orchestration_failed';
+    const status = Number.isInteger(error?.status) && error.status >= 400 && error.status <= 599 ? error.status : null;
+    const requestId = typeof error?.request_id === 'string' && /^[\w.-]{1,128}$/.test(error.request_id) ? error.request_id : null;
+    state.error_metadata = { code, status, request_id: requestId };
+    try { await persist(); } catch (saveError) {
+      const metadata = {
+        code: typeof saveError?.code === 'string' && /^[a-z0-9_]{1,80}$/i.test(saveError.code) ? saveError.code : 'checkpoint_save_failed',
+        status: Number.isInteger(saveError?.status) && saveError.status >= 400 && saveError.status <= 599 ? saveError.status : null,
+        request_id: typeof saveError?.request_id === 'string' && /^[\w.-]{1,128}$/.test(saveError.request_id) ? saveError.request_id : null,
+      };
+      return fail(state.error, state, metadata);
+    }
+    return fail(state.error, state, state.error_metadata);
   }
 }
