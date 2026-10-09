@@ -32,6 +32,9 @@ export function verifyHostingManifests(rootManifest, appManifest, builtManifest)
   for (const key of ['project_id', 'd1', 'r2']) {
     if ((rootManifest[key] ?? null) !== (builtManifest[key] ?? null)) throw new Error(`Built Site hosting ${key} does not match the source manifest.`);
   }
+  const withoutArtifactMetadata = ({ artifact_metadata: _artifactMetadata, ...manifest }) => manifest;
+  if (!isDeepStrictEqual(withoutArtifactMetadata(rootManifest), withoutArtifactMetadata(builtManifest))) throw new Error('Built Site hosting manifest conflicts with the source manifest.');
+  if (rootManifest.artifact_metadata != null && builtManifest.artifact_metadata != null && !isDeepStrictEqual(rootManifest.artifact_metadata, builtManifest.artifact_metadata)) throw new Error('Built and source artifact_metadata differ; rebuild with consistent attribution.');
   if (builtManifest.static != null) throw new Error('The generated app output unexpectedly declares a static Site.');
 }
 

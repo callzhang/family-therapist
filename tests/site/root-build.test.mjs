@@ -30,6 +30,7 @@ test('root build guards reject identity/binding drift between root, app, and gen
   const host = { project_id: 'existing-site', d1: 'DB', r2: 'BUCKET' };
   assert.throws(() => verifyHostingManifests(host, { ...host, project_id: 'different-site' }, host), /manifests differ/);
   assert.throws(() => verifyHostingManifests(host, host, { ...host, r2: 'OTHER' }), /r2/);
+  assert.throws(() => verifyHostingManifests(host, host, { ...host, d1: 'DB', capabilities: ['unexpected'] }), /manifest conflicts/);
 });
 
 test('root build validates Worker entry, client assets, Site identity, generated bindings, and ordered Drizzle metadata', () => {
