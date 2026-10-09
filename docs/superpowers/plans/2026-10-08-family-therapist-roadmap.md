@@ -4,9 +4,9 @@
 
 **Goal:** 将已确认的夫妻双方本地 Therapist Assistant、云端 Therapist、只读网站及自动同步升级交付为可验证的完整系统。
 
-**Architecture:** 两个本地 Codex 通过各自身份连接同一个云端 Therapist。正式记录采用 UUID 与服务器顺序；确认和 thread 状态由应用管理，咨询方法由云端 Skill 管理。Sites 承载网站/API/存储，可靠后台执行能力必须先验证。
+**Architecture:** 两个本地 Codex 通过各自身份连接同一个云端 Therapist。云端采用 Responses API，按 Therapist Skill 调用 Sites 提供的查询 tools；第一版不运行云端 Codex CLI。正式记录采用 UUID 与服务器顺序；确认和 thread 状态由应用管理，可靠后台续接必须先验证。
 
-**Tech Stack:** 核心规则采用可在 Node 与 Worker 使用的 JavaScript ES modules，Node 内置 test/assert；Sites 网站使用其保留的 Vinext/React starter、D1/R2。模型提供方和可靠运行器通过阶段 B 的证据决定，不假定已有账号或资源。
+**Tech Stack:** 核心规则采用可在 Node 与 Worker 使用的 JavaScript ES modules，Node 内置 test/assert；Sites 网站使用其保留的 Vinext/React starter、D1/R2；云端模型接口采用 OpenAI Responses API function calling。具体模型与可靠后台续接通过阶段 B 的证据确定，不假定已有凭证或资源。
 
 ---
 
@@ -30,6 +30,8 @@
 | sites/family-therapist/db/schema.ts | 消息、任务、成员、共识、版本持久模型 | B |
 | sites/family-therapist/src/auth/ | 平台与成员认证、下载权限 | B |
 | sites/family-therapist/src/consultation/ | 上下文组装、咨询输出保存与来源引用 | B |
+| sites/family-therapist/src/consultation/tools.ts | 查询工具 JSON Schema 与业务函数映射 | B |
+| sites/family-therapist/src/consultation/responses-loop.ts | Responses 调用、工具结果续接与运行预算 | B |
 | skills/cloud-therapist/SKILL.md | 云端咨询方法，不包含私人案例 | B |
 | evals/consultation/ | 冻结的虚构咨询案例与逐项评判依据 | B |
 | sites/family-therapist/app/ | 当前咨询、原则/共识、档案三个只读页面 | C |
@@ -55,8 +57,8 @@
 
 - [ ] 检查真实 Sites 的访问能力。必须先按 Sites 工作流创建一次并持久化其 ID，再读取 `get_site`；不重复注册、不改变成公开站点。
 - [ ] 核实后台任务是否可以在两边 Codex 和网页均关闭时继续完成并在执行中断后恢复。仅有 `waitUntil` 或 scheduled task 声明不能作为证据。
-- [ ] 如平台无法支持，提交独立运行器的具体主机、数据流、权限、费用与恢复方案给 derek 确认，不擅自占用共享生产服务。
-- [ ] 选择明确模型配置并按平台规定完成凭证配置。OpenAI 路径需要可用的 OpenAI Developers 插件及其密钥流程；不把 Codex 登录当 API Key。
+- [ ] 先验证 Sites + Responses API 的工具调用循环、后台完成事件或轮询、任务恢复；不引入云端 Codex CLI。如平台无法可靠续接，提交具体执行服务方案供 derek 确认，不擅自占用共享生产服务。
+- [ ] 选择明确的 Responses 模型配置并按平台规定完成凭证配置。需要可用的 OpenAI Developers 插件及其密钥流程；不把 Codex 登录当 API Key。
 - [ ] 获得第二位成员的准确账号，验证平台可访问和应用成员身份分别成立。若平台邀请会发信，应在实际发出前取得相应授权。
 - [ ] 验证无人值守请求具备平台访问与成员权限两个层次，服务令牌不能冒充另一方。
 
@@ -67,6 +69,9 @@
 - [ ] 基于 A 的契约写生产数据库与 API 逐文件计划；在 D1 或已批准数据库事务中同时保存输入和任务，并在数据库约束中保证唯一 UUID 与单 active。
 - [ ] API 身份由认证取得，拒绝请求体 actor 覆盖；相同 UUID 内容一致返回原收据，冲突拒绝；记录授权全文与内容版本。
 - [ ] Thread 所有变更、正式共识与确认进入统一追加流；API 的并发测试必须用真实存储适配器，不能仅重跑纯函数。
+- [ ] 注册 list_threads、get_thread、get_messages、get_message、get_agreements 的函数定义；与 HTTP API 复用同一业务查询，服务端绑定空间及快照，不信任模型传入身份。
+- [ ] 实现 Responses 工具循环：按 call_id 保存并返回工具结果，保留恢复位置与运行限制；最终结果经版本检查后统一保存。真实测试跨多次工具调用与异常续接，不以单次文本回复代替 agentic 工作流。
+- [ ] Therapist Skill 写清每个工具的用途与何时查询，后端真实注册 schema 和执行器；每轮固定 Skill 版本。已 settled 议题不通过模型查询工具自动恢复原始争论，成员档案权限与咨询上下文权限分开。
 - [ ] 运行器固定输入截止位置并串行处理。杀停测试只针对测试进程；证明恢复、过期占用回收和结果唯一提交。
 - [ ] 输入中 thread 状态或共识改变后，迟到的模型输出不得越过当前状态发表。消息与输出均保留来源与 Skill/模型版本。
 - [ ] 编写云端 Skill；保持默认旧事只加载已确认结论，不因为摘要将历史推测变成事实。
