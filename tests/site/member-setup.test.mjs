@@ -18,7 +18,7 @@ const seed = { space_id: spaceId, members };
 const seedJson = JSON.stringify(seed);
 
 class D1Sqlite {
-  constructor() { this.sqlite = new DatabaseSync(':memory:'); this.sqlite.exec('PRAGMA foreign_keys = ON'); this.batchCalls = 0; this.failStatementAt = null; }
+  constructor() { this.sqlite = new DatabaseSync(':memory:'); this.sqlite.exec('PRAGMA foreign_keys = ON'); this.batchCalls = 0; this.failStatementAt = null; this.beforeBatch = null; }
   async migrate() {
     const files = (await readdir(migrationDir)).filter((name) => /^\d{4}_.*\.sql$/.test(name)).sort();
     assert.ok(files.length >= 4, 'member setup tests require actual generated migrations');
@@ -33,6 +33,8 @@ class D1Sqlite {
   }
   async batch(statements) {
     this.batchCalls += 1;
+    this.beforeBatch?.();
+    this.beforeBatch = null;
     this.sqlite.exec('BEGIN IMMEDIATE');
     try {
       for (const [index, statement] of statements.entries()) {
@@ -129,6 +131,27 @@ test('setup refuses partial, conflicting, revoked and reconfigured states withou
     const changedSeed = JSON.stringify({ ...seed, members: [{ ...members[0], token_sha256: digest(changedToken) }, members[1]] });
     await assert.rejects(initializeMemberSpace({ db, seedJson: changedSeed, request: setupRequest(changedToken) }), { code: 'setup_conflict', status: 409 });
     assert.deepEqual(db.sqlite.prepare('SELECT token_sha256, user_id, revoked_at FROM member_tokens WHERE space_id = ? ORDER BY user_id').all(spaceId).map((row) => ({ ...row })), members.map(({ actor_id, token_sha256 }) => ({ token_sha256, user_id: actor_id, revoked_at: null })));
+  } finally { db.close(); }
+});
+
+test('setup refuses an empty registry when consultation history already exists', async () => {
+  const db = await createDb();
+  try {
+    db.prepare('INSERT INTO messages(message_id,space_id,thread_id,kind,actor_id,body_json,created_at) VALUES(?,?,?,?,?,?,?)')
+      .bind('history-message', spaceId, null, 'expression', actors[0], '{}', '2026-10-08T00:00:00Z').run();
+    await assert.rejects(initializeMemberSpace({ db, seedJson, request: setupRequest(tokens[0]) }), { code: 'setup_conflict', status: 409 });
+    assert.deepEqual(await rowCounts(db), { members: 0, tokens: 0 });
+  } finally { db.close(); }
+});
+
+test('a complete membership pair appearing after preflight cannot have its token registry auto-filled', async () => {
+  const db = await createDb();
+  try {
+    db.beforeBatch = () => {
+      for (const member of members) db.sqlite.prepare('INSERT INTO members(space_id,user_id,role) VALUES(?,?,?)').run(spaceId, member.actor_id, member.role);
+    };
+    await assert.rejects(initializeMemberSpace({ db, seedJson, request: setupRequest(tokens[0]) }), { code: 'setup_conflict', status: 409 });
+    assert.deepEqual(await rowCounts(db), { members: 2, tokens: 0 });
   } finally { db.close(); }
 });
 
