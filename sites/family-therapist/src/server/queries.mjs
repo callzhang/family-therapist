@@ -21,7 +21,8 @@ function limitValue(value) {
 
 async function rows(db, sql, ...values) {
   const result = await db.prepare(sql).bind(...values).all();
-  return result.results ?? [];
+  if (!result || !Array.isArray(result.results)) throw new Error('D1 query returned an invalid result set');
+  return result.results;
 }
 
 async function one(db, sql, ...values) {
@@ -75,7 +76,7 @@ async function listThreads(db, args, scope) {
     ORDER BY tv.message_seq ASC, tv.thread_id ASC LIMIT ?`, scope.space_id, scope.snapshot_seq, scope.snapshot_seq, args.status, args.status, cursor?.thread_id ?? null, cursor?.message_seq ?? null, cursor?.message_seq ?? null, cursor?.thread_id ?? null, limit + 1);
   const page = found.slice(0, limit);
   const hasMore = found.length > limit;
-  return { items: page.map(threadResult), next_after_id: hasMore ? page.at(-1).thread_id : null, has_more: hasMore, snapshot_seq: scope.snapshot_seq };
+  return { items: page.map(threadResult), next_after_id: page.at(-1)?.thread_id ?? args.after_thread_id ?? null, has_more: hasMore, snapshot_seq: scope.snapshot_seq };
 }
 
 async function getThread(db, args, scope) {
@@ -100,7 +101,7 @@ async function getMessages(db, args, scope) {
     ORDER BY seq ASC LIMIT ?`, scope.space_id, args.thread_id, scope.snapshot_seq, cursorSeq, cursorSeq, limit + 1);
   const page = found.slice(0, limit);
   const hasMore = found.length > limit;
-  return { items: page.map(parseMessage), next_after_id: hasMore ? page.at(-1).message_id : null, has_more: hasMore, snapshot_seq: scope.snapshot_seq };
+  return { items: page.map(parseMessage), next_after_id: page.at(-1)?.message_id ?? args.after_message_id ?? null, has_more: hasMore, snapshot_seq: scope.snapshot_seq };
 }
 
 async function getMessage(db, args, scope) {
@@ -112,6 +113,10 @@ async function getMessage(db, args, scope) {
 }
 
 async function getAgreements(db, args, scope) {
+  if (args.thread_id != null) {
+    const thread = await latestThread(db, scope, args.thread_id);
+    if (!thread) throw new Error('Unknown or out-of-scope agreement thread');
+  }
   let cursor = null;
   if (args.after_agreement_id) {
     cursor = await one(db, `SELECT av.message_seq, av.agreement_id FROM agreement_versions av
@@ -130,7 +135,7 @@ async function getAgreements(db, args, scope) {
     ORDER BY av.message_seq ASC, av.agreement_id ASC LIMIT ?`, scope.space_id, scope.snapshot_seq, scope.snapshot_seq, args.thread_id, args.thread_id, cursor?.agreement_id ?? null, cursor?.message_seq ?? null, cursor?.message_seq ?? null, cursor?.agreement_id ?? null, limit + 1);
   const page = found.slice(0, limit);
   const hasMore = found.length > limit;
-  return { items: page.map(agreementResult), next_after_id: hasMore ? page.at(-1).agreement_id : null, has_more: hasMore, snapshot_seq: scope.snapshot_seq };
+  return { items: page.map(agreementResult), next_after_id: page.at(-1)?.agreement_id ?? args.after_agreement_id ?? null, has_more: hasMore, snapshot_seq: scope.snapshot_seq };
 }
 
 const handlers = { list_threads: listThreads, get_thread: getThread, get_messages: getMessages, get_message: getMessage, get_agreements: getAgreements };
@@ -138,7 +143,7 @@ const handlers = { list_threads: listThreads, get_thread: getThread, get_message
 export function createQueryExecutor(db) {
   if (!db || typeof db.prepare !== 'function') throw new Error('A D1 database binding is required');
   return async function execute(name, args, scope) {
-    const handler = handlers[name];
+    const handler = Object.hasOwn(handlers, name) ? handlers[name] : null;
     if (!handler) throw new Error(`Unsupported query tool: ${name}`);
     assertScope(scope);
     await membership(db, scope);
