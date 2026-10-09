@@ -2,3 +2,5 @@
 .env.local
 *.tsbuildinfo
 .local-members/
+connection.local.json
+.local-assistant-state/
