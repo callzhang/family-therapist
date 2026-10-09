@@ -6,17 +6,18 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIRECTORY_NAME = '.local-members';
 const MEMBERS = [
-  { actor_id: 'partner-husband', filename: 'partner-husband.json' },
-  { actor_id: 'partner-wife', filename: 'partner-wife.json' },
+  { actor_id: 'partner-husband', filename: 'partner-husband.json', role: 'husband' },
+  { actor_id: 'partner-wife', filename: 'partner-wife.json', role: 'wife' },
 ];
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function hashToken(token) {
   return createHash('sha256').update(token, 'utf8').digest('hex');
 }
 
 function seedSql(spaceId, configs) {
-  const rows = configs.map((config) => `('${spaceId}', '${config.actor_id}', 'member')`).join(',\n');
+  const rows = configs.map((config) => `('${spaceId}', '${config.actor_id}', '${config.role}')`).join(',\n');
   const tokenRows = configs.map((config) => `('${hashToken(config.member_token)}', '${spaceId}', '${config.actor_id}', NULL)`).join(',\n');
   return `INSERT INTO members (space_id, user_id, role) VALUES\n${rows};\n\nINSERT INTO member_tokens (token_sha256, space_id, user_id, revoked_at) VALUES\n${tokenRows};\n`;
 }
@@ -49,8 +50,8 @@ async function readExisting(directory) {
     const filepath = path.join(directory, member.filename);
     const config = JSON.parse(await readFile(filepath, 'utf8'));
     if (Object.keys(config).sort().join(',') !== 'actor_id,member_token,role,space_id' ||
-      config.actor_id !== member.actor_id || config.role !== 'member' ||
-      typeof config.space_id !== 'string' || !TOKEN_PATTERN.test(config.member_token)) {
+      config.actor_id !== member.actor_id || config.role !== member.role ||
+      typeof config.space_id !== 'string' || !UUID_PATTERN.test(config.space_id) || !TOKEN_PATTERN.test(config.member_token)) {
       throw new Error(`Local member configuration is inconsistent: ${member.filename}`);
     }
     configs.push(config);
@@ -82,10 +83,10 @@ export async function provisionMemberTokens({ rootDir = ROOT } = {}) {
   if (current) return { directory, created: false, files: MEMBERS.map(({ filename }) => path.join(directory, filename)).concat(path.join(directory, 'seed.sql')) };
 
   const spaceId = randomUUID();
-  const configs = MEMBERS.map(({ actor_id, filename }) => ({
+  const configs = MEMBERS.map(({ actor_id, filename, role }) => ({
     actor_id,
     filename,
-    role: 'member',
+    role,
     space_id: spaceId,
     member_token: randomBytes(32).toString('base64url'),
   }));

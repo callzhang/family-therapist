@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { createQueryExecutor } from "./queries.mjs";
 import { authenticateMemberToken, MemberTokenError } from "./member-token.mjs";
+import { snapshotSequence } from "./snapshot-sequence.mjs";
 import { HttpError } from "./member-context";
 
 type D1 = NonNullable<Cloudflare.Env["DB"]>;
@@ -24,11 +25,12 @@ export async function apiMemberContext(request: Request): Promise<ApiMemberConte
   const snapshot = await db.prepare("SELECT COALESCE(MAX(seq), 0) AS snapshot_seq FROM messages WHERE space_id = ?")
     .bind(identity.space_id)
     .first<{ snapshot_seq: number }>();
-  if (!snapshot) throw new HttpError(503, "暂时无法建立一致的读取快照，请稍后重试。");
+  const snapshotSeq = snapshotSequence(snapshot);
+  if (snapshotSeq === null) throw new HttpError(503, "暂时无法建立一致的读取快照，请稍后重试。", { code: "snapshot_unavailable" });
   return {
     db,
     execute: createQueryExecutor(db),
-    scope: { actor_id: identity.actor_id, space_id: identity.space_id, snapshot_seq: snapshot.snapshot_seq, purpose: "member_view" },
+    scope: { actor_id: identity.actor_id, space_id: identity.space_id, snapshot_seq: snapshotSeq, purpose: "member_view" },
     role: identity.role,
   };
 }
