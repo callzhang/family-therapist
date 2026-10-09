@@ -16,15 +16,71 @@ const setup = (responses, executeTool, extras = {}) => {
   };
 };
 
-test('tools expose only strict read functions and make optional fields nullable and required', () => {
+test('tools expose read functions with only identity arguments required and nullable query arguments defaulting to null', () => {
   assert.deepEqual(TOOL_DEFINITIONS.map((tool) => tool.name), ['list_threads', 'get_thread', 'get_messages', 'get_message', 'get_agreements']);
   for (const tool of TOOL_DEFINITIONS) {
-    assert.equal(tool.type, 'function'); assert.equal(tool.strict, true);
+    assert.equal(tool.type, 'function'); assert.equal(tool.strict, false);
     assert.ok(Array.isArray(tool.parameters.required));
     assert.equal(tool.parameters.additionalProperties, false);
-    assert.deepEqual(Object.keys(tool.parameters.properties).sort(), [...tool.parameters.required].sort());
+    for (const key of Object.keys(tool.parameters.properties).filter((key) => !tool.parameters.required.includes(key))) {
+      assert.equal(tool.parameters.properties[key].default, null);
+      assert.ok(tool.parameters.properties[key].type.includes('null'));
+    }
   }
-  assert.deepEqual(TOOL_DEFINITIONS.find((t) => t.name === 'get_messages').parameters.properties.after_message_id, { type: ['string', 'null'], format: 'uuid' });
+  assert.deepEqual(TOOL_DEFINITIONS.find((t) => t.name === 'get_messages').parameters.required, ['thread_id']);
+  assert.deepEqual(TOOL_DEFINITIONS.find((t) => t.name === 'get_messages').parameters.properties.after_message_id, { type: ['string', 'null'], format: 'uuid', default: null });
+});
+
+test('omitted query arguments receive null defaults and invalid supplied values remain rejected', () => {
+  assert.deepEqual(validateToolArguments('list_threads', {}), { status: null, after_thread_id: null, limit: null });
+  assert.deepEqual(validateToolArguments('get_messages', { thread_id: threadId }), { thread_id: threadId, after_message_id: null, limit: null });
+  assert.deepEqual(validateToolArguments('get_agreements', {}), { thread_id: null, after_agreement_id: null, limit: null });
+  assert.throws(() => validateToolArguments('get_messages', {}), /missing required property: thread_id/i);
+  assert.throws(() => validateToolArguments('list_threads', { status: 'unknown' }), /unsupported value/i);
+  assert.throws(() => validateToolArguments('list_threads', { limit: 101 }), /at most 100/i);
+  assert.throws(() => validateToolArguments('get_messages', { thread_id: 'not-a-uuid' }), /uuid/i);
+});
+
+test('a saved tools-pending checkpoint resumes omitted list, transcript, and agreement arguments', async () => {
+  const checkpoint = {
+    run_id: scope.run_id, scope, model: 'gpt-6-luna', input: [{ role: 'user', content: 'Resume the read.' }],
+    phase: 'tools_pending', previous_response_id: 'resp-pending', status: 'failed', tool_call_count: 0,
+    pending_calls: [
+      call('c-list', 'list_threads', {}),
+      call('c-messages', 'get_messages', { thread_id: threadId }),
+      call('c-agreements', 'get_agreements', {}),
+    ],
+    tool_results: [], provider_response: null,
+  };
+  const executed = [];
+  const h = setup([
+    { id: 'resp-after-tools', status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Evidence retrieved.' }] }] },
+    finalResponse('resp-final'),
+  ], async (name, args) => { executed.push([name, args]); return { name, args }; }, { checkpoint });
+  const result = await h.run;
+
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(executed, [
+    ['list_threads', { status: null, after_thread_id: null, limit: null }],
+    ['get_messages', { thread_id: threadId, after_message_id: null, limit: null }],
+    ['get_agreements', { thread_id: null, after_agreement_id: null, limit: null }],
+  ]);
+  assert.equal(h.requests[0].previous_response_id, 'resp-pending');
+  assert.equal(h.requests[0].input.length, 3);
+});
+
+test('rejects a provider response that reuses a function call id already executed', async () => {
+  let executions = 0;
+  const h = setup([
+    { id: 'resp-1', status: 'completed', output: [call('reused-call', 'list_threads', {})] },
+    { id: 'resp-2', status: 'completed', output: [call('reused-call', 'list_threads', {})] },
+  ], async () => { executions += 1; return { items: [] }; });
+  const result = await h.run;
+
+  assert.equal(result.status, 'failed');
+  assert.match(result.error.message, /reuses.*function call id/i);
+  assert.equal(executions, 1);
+  assert.equal(result.checkpoint.tool_results.length, 1);
 });
 
 test('continues get_thread then get_messages and parses completed structured output', async () => {
