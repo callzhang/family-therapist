@@ -1,4 +1,6 @@
-# Runtime capability and verification boundary
+# Pre-publication runtime acceptance snapshot
+
+This document records local acceptance before the first publication. The Site was subsequently published and its server-side secrets and D1 schema were provisioned. See the README and deployment receipts for publication status; unconfigured/unpublished statements below are historical evidence. Genuine Responses output, unattended processing and each person's hourly heartbeat remain separately unverified.
 
 Updated 2026-10-08. Approved execution choice: OpenAI Responses API with five read-only function tools backed by the shared Sites query service. A local Codex login is not an API credential. No cloud Codex CLI process is assumed.
 
