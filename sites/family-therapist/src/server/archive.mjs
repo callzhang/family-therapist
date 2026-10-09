@@ -42,3 +42,38 @@ export function createArchiveStream({ format, thread, snapshot, readPage, rolesB
     async cancel() { await iterator.return(); },
   });
 }
+
+export async function measureReadableBytes(stream) {
+  const reader = stream.getReader();
+  let byteLength = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return byteLength;
+      byteLength += value.byteLength;
+      if (!Number.isSafeInteger(byteLength)) throw new RangeError('Archive byte length exceeds the FixedLengthStream limit');
+    }
+  } catch (error) {
+    await reader.cancel(error).catch(() => {});
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+export async function putKnownLengthStream({ stream, byteLength, createFixedLengthStream, put }) {
+  if (!Number.isSafeInteger(byteLength) || byteLength < 0) throw new RangeError('Archive byte length must be a non-negative safe integer');
+  const fixed = createFixedLengthStream(byteLength);
+  const abort = new AbortController();
+  const putPromise = Promise.resolve().then(() => put(fixed.readable));
+  const pipePromise = stream.pipeTo(fixed.writable, { signal: abort.signal });
+  try {
+    const [, receipt] = await Promise.all([pipePromise, putPromise]);
+    if (!receipt) throw new Error('Archive storage did not return a write receipt');
+    return receipt;
+  } catch (error) {
+    abort.abort(error);
+    await Promise.allSettled([pipePromise, putPromise]);
+    throw error;
+  }
+}
