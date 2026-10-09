@@ -142,6 +142,10 @@ test('agreements return confirmed snapshot versions and global principles', asyn
   try {
     const result = await execute('get_agreements', { thread_id: ids.consultation, after_agreement_id: null, limit: 20 }, { ...scope, snapshot_seq: scope.snapshot_seq + 1 });
     assert.deepEqual(result.items.map((item) => item.text).sort(), ['Current agreement', 'Global principle']);
+    const current = result.items.find((item) => item.text === 'Current agreement');
+    assert.equal(current.confirmation_message_id, ids.message2);
+    assert.equal(current.confirmed_by, ids.actor);
+    assert.equal(current.confirmed_at, '2026-10-08T00:00:02Z');
     assert.equal(result.items.some((item) => item.text === 'Unconfirmed'), false);
     const first = await execute('get_agreements', { thread_id: ids.consultation, after_agreement_id: null, limit: 1 }, { ...scope, snapshot_seq: scope.snapshot_seq + 1 });
     const last = await execute('get_agreements', { thread_id: ids.consultation, after_agreement_id: first.next_after_id, limit: 10 }, { ...scope, snapshot_seq: scope.snapshot_seq + 1 });

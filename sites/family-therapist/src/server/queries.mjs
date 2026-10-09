@@ -64,7 +64,7 @@ function threadResult(row) {
   return { thread_id: row.thread_id, title: row.title, status: row.status, summary: row.summary, message_seq: row.message_seq };
 }
 function agreementResult(row) {
-  return { agreement_id: row.agreement_id, thread_id: row.thread_id, version: row.version, text: row.text, message_seq: row.message_seq };
+  return { agreement_id: row.agreement_id, thread_id: row.thread_id, version: row.version, text: row.text, message_seq: row.message_seq, confirmation_message_id: row.confirmation_message_id, confirmed_by: row.confirmed_by, confirmed_at: row.confirmed_at };
 }
 
 async function latestThread(db, scope, threadId) {
@@ -150,8 +150,10 @@ async function getAgreements(db, args, scope) {
     if (!cursor) throw new QueryReadError('invalid_cursor', 'Unknown or out-of-scope agreement cursor');
   }
   const limit = limitValue(args.limit);
-  const found = await rows(db, `SELECT av.agreement_id, av.thread_id, av.message_seq, av.version, av.text
+  const found = await rows(db, `SELECT av.agreement_id, av.thread_id, av.message_seq, av.version, av.text,
+      confirmation.message_id AS confirmation_message_id, confirmation.actor_id AS confirmed_by, confirmation.created_at AS confirmed_at
     FROM agreement_versions av
+    INNER JOIN messages confirmation ON confirmation.space_id = av.space_id AND confirmation.seq = av.message_seq
     WHERE av.space_id = ? AND av.message_seq <= ?
       AND av.message_seq = (SELECT MAX(v.message_seq) FROM agreement_versions v WHERE v.space_id = av.space_id AND v.agreement_id = av.agreement_id AND v.message_seq <= ?)
       AND av.confirmed = 1 AND (av.thread_id IS NULL OR ? IS NULL OR av.thread_id = ?)
