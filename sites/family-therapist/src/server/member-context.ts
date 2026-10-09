@@ -38,7 +38,7 @@ export async function memberContext(): Promise<MemberContext> {
 }
 
 export function routeError(error: unknown): Response {
-  if (error instanceof HttpError) return Response.json({ error: error.message, ...error.details }, { status: error.status });
+  if (error instanceof HttpError) return Response.json({ error: error.message, ...error.details }, { status: error.status, headers: { "Cache-Control": "private, no-store" } });
   if (error instanceof QueryReadError) {
     const messages: Record<string, string> = {
       invalid_scope: "读取范围无效。",
