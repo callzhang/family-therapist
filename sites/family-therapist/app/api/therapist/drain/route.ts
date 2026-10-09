@@ -4,13 +4,11 @@ import { therapistRunConfig } from "../../../../src/server/therapist-config";
 import { createOpenAIResponsesRequest } from "../../../../src/server/openai-responses.mjs";
 import { runNextTherapistTask } from "../../../../src/server/therapist-worker.mjs";
 import { HttpError, routeError } from "../../../../src/server/member-context";
+import { isRequestBodyEmpty } from "../../../../src/server/request-body.mjs";
 
 export async function POST(request: Request): Promise<Response> {
   try {
-    if (request.body) {
-      await request.body.cancel();
-      throw new HttpError(400, "此操作不接受请求正文。");
-    }
+    if (!await isRequestBodyEmpty(request)) throw new HttpError(400, "此操作不接受请求正文。", { code: "request_body_not_allowed" });
     const context = await apiMemberContext(request);
     const config = therapistRunConfig();
     if (!config || !env.OPENAI_API_KEY) {
