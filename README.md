@@ -1,21 +1,19 @@
 # 家庭关系咨询系统
 
-本仓库按阶段规划并实现一对夫妻使用的家庭关系咨询系统。当前代码包括历史和讨论协议、成员 Token API 边界、只读网站查询适配器，以及本地验证过的表达 intake 和持久讨论命令。网站仍只读；命令 API 不代表 Therapist worker、模型调用或生产部署已经完成。
+本仓库实现一对伴侣共用的咨询工作流。当前包含：表达 intake 与双人确认协议、持久讨论和历史接口、Responses 工具循环及检查点恢复模块、只读网站查询、成员 Token 与浏览器会话、以及本地 Agent 客户端、同步和运行时模块。网站目前只读；这些实现和本地测试不证明云端模型调用或自动 heartbeat 已在运行。
 
-阶段 A 的精确设计与范围见[设计规格](docs/superpowers/specs/2026-10-08-family-therapist-design.md)、[系统路线图](docs/superpowers/plans/2026-10-08-family-therapist-roadmap.md)和[协议实现计划](docs/superpowers/plans/2026-10-08-family-therapist-protocol.md)。生产适配器应遵守[协议边界](docs/operations/protocol.md)。
-
-使用本机 Node.js 内置测试运行阶段 A：
+开发入口：
 
 ```sh
-node --test tests/protocol/history.test.mjs tests/protocol/discussion.test.mjs
+# 全部协议、治疗师、本地客户端和网站测试
+node --test tests/therapist/*.test.mjs tests/local/*.test.mjs tests/protocol/*.test.mjs tests/site/*.test.mjs
+
+# 构建网站源代码
+npm run build
 ```
 
-阶段 B 已增加 Responses 工具循环和检查点恢复模块；完整本地测试命令为：
+网站源代码位于 [`sites/family-therapist`](sites/family-therapist)。成员 Token 的本地配置和新 D1 初始化流程见[成员 Token 运维说明](docs/operations/member-tokens.md)。不要将明文 Token 或服务端 seed 配置提交到仓库。
 
-```sh
-node --test tests/protocol/history.test.mjs tests/protocol/discussion.test.mjs tests/therapist/responses.test.mjs
-```
+生产运行仍有明确门槛：需先在目标 D1 应用审查过的迁移，再通过服务端 `THERAPIST_MEMBER_SEED` 和已认证的 `POST /api/setup` 初始化空空间，并配置只允许预期用户访问的私密 Sites 外层访问策略。部署、schema 变更和权限配置需要按当前平台能力分别执行与验证。实际 Responses API 生成还需要可用的 Provider 余额；此前运行因余额耗尽受阻，见[运行验证记录](docs/verification/2026-10-08-responses-runtime.md)。持久化 Worker、运行时健康、heartbeat/定时执行和外部结果回执也必须在目标环境单独配置并验证；构建、测试或部署成功本身不证明它们已运行。
 
-协议及持久化 SQLite 集成测试涵盖双人确认、CAS 并发、原子回滚和不可覆盖的 UUID 回执。云端 Therapist Skill 已编写；Responses API 实际生成曾因余额耗尽而阻塞，详见[当前验证记录](docs/verification/2026-10-08-responses-runtime.md)。本地测试和构建不代表 hosted migration、线上运行或外部执行结果。
-
-本地 Therapist Assistant 的指令源与操作边界已写入 [Skill](skills/local-therapist-assistant/SKILL.md) 和[运维说明](docs/operations/local-assistant.md)，并附有虚构行为评估案例规格。此为文档交付，不是本地客户端、云端消息 API、认证配置、heartbeat 或自动更新实现；阶段 D 仍未完成。
+产品范围和阶段状态见[系统设计](docs/superpowers/specs/2026-10-08-family-therapist-design.md)及[路线图](docs/superpowers/plans/2026-10-08-family-therapist-roadmap.md)。

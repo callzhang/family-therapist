@@ -4,5 +4,6 @@ declare namespace Cloudflare {
     BUCKET?: R2Bucket;
     OPENAI_API_KEY?: string;
     THERAPIST_MODEL?: string;
+    THERAPIST_MEMBER_SEED?: string;
   }
 }

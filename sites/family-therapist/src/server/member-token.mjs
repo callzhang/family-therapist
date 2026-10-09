@@ -20,10 +20,14 @@ async function sha256Hex(value) {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+export async function memberTokenDigestFromRequest(request) {
+  if (!request?.headers) throw new TypeError('request is required');
+  return sha256Hex(bearerToken(request));
+}
+
 export async function authenticateMemberToken({ db, request }) {
   if (!db || !request?.headers) throw new TypeError('db and request are required');
-  const token = bearerToken(request);
-  const digest = await sha256Hex(token);
+  const digest = await memberTokenDigestFromRequest(request);
   const member = await db.prepare(`
     SELECT mt.space_id, mt.user_id AS actor_id, m.role
     FROM member_tokens mt
