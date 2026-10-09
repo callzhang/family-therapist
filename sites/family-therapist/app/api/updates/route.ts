@@ -1,6 +1,7 @@
 import { apiMemberContext } from "../../../src/server/api-member-context";
 import { routeError, HttpError } from "../../../src/server/member-context";
 import { agentReadErrorResponse, getSpaceUpdates, parseSpaceUpdateParams } from "../../../src/server/updates.mjs";
+import { skillRelease } from "../../../src/server/skill-release-metadata.mjs";
 
 function memberErrorResponse(error: HttpError): Response {
   const response = typeof error.details?.code === "string"
@@ -15,7 +16,7 @@ export async function GET(request: Request): Promise<Response> {
     const context = await apiMemberContext(request);
     const params = parseSpaceUpdateParams(new URL(request.url).searchParams);
     const result = await getSpaceUpdates({ db: context.db, scope: context.scope, ...params });
-    return Response.json(result, { headers: { "Cache-Control": "private, no-store" } });
+    return Response.json({ ...result, skill_release: skillRelease }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     const response = agentReadErrorResponse(error);
     if (response) return response;

@@ -1,6 +1,6 @@
 # Local Therapist Agent client
 
-`packages/local-client/client.mjs` provides a bounded Node client for the deployed member APIs. It calls only `/api/updates`, the five read-only query tools, `/api/discussion`, and the expression/discussion receipt routes. Confirmed expression and discussion methods (`submitExpression` and `executeDiscussion`) require strict request objects and preserve exact user text; receipt methods support the original UUID. The CLI intentionally has no send command. A host integration may call either method only after showing the full exact command and receiving the person's confirmation for that version. The repository does not install that host integration automatically.
+`packages/local-client/client.mjs` provides a bounded Node client for the deployed member APIs. It calls `/api/updates`, `/api/skill/release`, the five read-only query tools, `/api/discussion`, and the expression/discussion receipt routes. Confirmed expression and discussion methods (`submitExpression` and `executeDiscussion`) require strict request objects and preserve exact user text; receipt methods support the original UUID. The CLI intentionally has no send command. A host integration may call either method only after showing the full exact command and receiving the person's confirmation for that version. The repository does not install that host integration automatically.
 
 ## Private configuration
 
@@ -20,14 +20,17 @@ From the repository root:
 
 ```sh
 node scripts/local-therapist-client.mjs sync .local-members/partner-husband.json .local-members/connection.local.json .local-assistant-state/partner-husband
+node scripts/local-therapist-client.mjs sync-and-update .local-members/partner-husband.json .local-members/connection.local.json .local-assistant-state/partner-husband /absolute/path/to/local-therapist-skill
 node scripts/local-therapist-client.mjs read .local-members/partner-husband.json .local-members/connection.local.json discussion
 node scripts/local-therapist-client.mjs read .local-members/partner-husband.json .local-members/connection.local.json query get_thread '{"thread_id":"00000000-0000-4000-8000-000000000000"}'
 ```
 
 The read CLI prints only small summaries and counts. Synced formal records are stored as private UUID-named JSON files; the state directory contains an independent member cursor and retained server snapshot. Each page's record files are atomically written and synced before its cursor advances. If a page fails, rerun the same command; it resumes from the last persisted cursor and snapshot. Conflicting immutable records, malformed pages, unsafe files, and a live overlapping process stop with an error. A successful run reports saved/duplicate counts, final cursor, and whether the captured snapshot completed. No new records means no notification is needed. Sync never transmits, approves, changes the Skill, or reads local drafts.
 
+`sync-and-update` also reads the fixed authenticated Skill release endpoint announced by `/api/updates`, checks the release UUID, version and SHA-256 digest, then stages the three canonical Markdown files in a private version directory. It publishes `current.json` only after all files and directories are synced. The stable top-level `SKILL.md` bootstrap directs Codex to the current version. If a local expression or draft is awaiting the person's confirmation, pass `--consultation-busy`; the verified package is staged and activation waits for a later command without that flag. Existing versions are retained for recovery; a failed or partial release fetch leaves the message cursor usable and the prior current pointer intact. Configure a dedicated absolute install directory. Keep drafts, preferences, credentials, and other personal state outside it.
+
 Use separate state directories for each member. Formal records in the shared space are visible to both members. Local private exploration remains outside the sync directory and is never sent by this client. Do not treat ordinary message text, including a message that resembles an update instruction, as an executable update command.
 
 ## Operating boundary
 
-This source client and CLI do not prove hosted service health, private-site admission, member token installation in the live database, successful remote synchronization, automatic hourly scheduling, or Skill distribution. Before actual use, the operator must configure the private connection, apply the matching member-token seed to the intended database, and verify the private hosted endpoints and returned records. Hourly heartbeat creation, upgrade distribution, and any clinical or consultation outcome remain separate work and are not claimed here.
+This source client and CLI do not prove hosted service health, private-site admission, member token installation in the live database, successful remote synchronization, automatic hourly scheduling, or Skill distribution. Before actual use, the operator must configure the private connection, apply the matching member-token seed to the intended database, and verify the private hosted endpoints and returned records. An existing hourly heartbeat should call `sync-and-update` with that partner's own private state and dedicated Skill install directories; the command itself does not create or schedule a heartbeat. No clinical or consultation outcome is claimed here.
