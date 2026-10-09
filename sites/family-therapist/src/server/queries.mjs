@@ -1,18 +1,34 @@
+export const QUERY_ERROR_STATUS = Object.freeze({
+  invalid_scope: 400, unsupported_purpose: 400, unsupported_query: 400,
+  membership_required: 403, transcript_forbidden: 403,
+  thread_not_found: 404, message_not_found: 404, invalid_cursor: 404, agreement_thread_not_found: 404,
+  invalid_result_set: 503, invalid_message_json: 500, invalid_record: 500,
+});
+
+export class QueryReadError extends Error {
+  constructor(code, message, options) {
+    super(message, options);
+    this.name = 'QueryReadError';
+    this.code = code;
+    this.status = QUERY_ERROR_STATUS[code] ?? 500;
+  }
+}
+
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
 
 function assertScope(scope) {
   if (!scope || typeof scope.space_id !== 'string' || typeof scope.actor_id !== 'string' || !Number.isSafeInteger(scope.snapshot_seq) || scope.snapshot_seq < 0) {
-    throw new Error('Query scope requires authenticated actor_id, space_id, and snapshot_seq');
+    throw new QueryReadError('invalid_scope', 'Query scope requires authenticated actor_id, space_id, and snapshot_seq');
   }
   if (scope.purpose !== undefined && !['therapist', 'member_view'].includes(scope.purpose)) {
-    throw new Error('Unsupported server query purpose');
+    throw new QueryReadError('unsupported_purpose', 'Unsupported server query purpose');
   }
 }
 
 async function membership(db, scope) {
   const row = await db.prepare('SELECT 1 AS allowed FROM members WHERE space_id = ? AND user_id = ?').bind(scope.space_id, scope.actor_id).first();
-  if (!row) throw new Error('Actor membership is required for this space');
+  if (!row) throw new QueryReadError('membership_required', 'Actor membership is required for this space');
 }
 
 function limitValue(value) {
@@ -21,7 +37,7 @@ function limitValue(value) {
 
 async function rows(db, sql, ...values) {
   const result = await db.prepare(sql).bind(...values).all();
-  if (!result || !Array.isArray(result.results)) throw new Error('D1 query returned an invalid result set');
+  if (!result || !Array.isArray(result.results)) throw new QueryReadError('invalid_result_set', 'D1 query returned an invalid result set');
   return result.results;
 }
 
@@ -29,10 +45,18 @@ async function one(db, sql, ...values) {
   return db.prepare(sql).bind(...values).first();
 }
 
+export function parseUnderstandingRecord(bodyJson, messageId) {
+  let record;
+  try { record = JSON.parse(bodyJson); }
+  catch (error) { throw new QueryReadError('invalid_message_json', `Understanding record ${messageId} has invalid JSON`, { cause: error }); }
+  if (!record || typeof record !== 'object' || Array.isArray(record)) throw new QueryReadError('invalid_record', `Understanding record ${messageId} has an invalid shape`);
+  return record;
+}
+
 function parseMessage(row) {
   let body;
   try { body = JSON.parse(row.body_json); }
-  catch (error) { throw new Error(`Message ${row.message_id} has invalid JSON body`, { cause: error }); }
+  catch (error) { throw new QueryReadError('invalid_message_json', `Message ${row.message_id} has invalid JSON body`, { cause: error }); }
   return { message_id: row.message_id, thread_id: row.thread_id, kind: row.kind, actor_id: row.actor_id, body, created_at: row.created_at, seq: row.seq };
 }
 
@@ -53,8 +77,8 @@ async function latestThread(db, scope, threadId) {
 
 function transcriptAllowed(scope, threadId, thread) {
   if (scope.purpose === 'member_view') return;
-  if (threadId !== scope.consultation_thread_id) throw new Error('Transcript access is limited to the consultation thread');
-  if (thread?.status === 'settled') throw new Error('Settled consultation transcripts are unavailable');
+  if (threadId !== scope.consultation_thread_id) throw new QueryReadError('transcript_forbidden', 'Transcript access is limited to the consultation thread');
+  if (thread?.status === 'settled') throw new QueryReadError('transcript_forbidden', 'Settled consultation transcripts are unavailable');
 }
 
 async function listThreads(db, args, scope) {
@@ -64,7 +88,7 @@ async function listThreads(db, args, scope) {
       WHERE tv.space_id = ? AND tv.thread_id = ? AND tv.message_seq <= ?
         AND tv.message_seq = (SELECT MAX(v.message_seq) FROM thread_versions v WHERE v.space_id = tv.space_id AND v.thread_id = tv.thread_id AND v.message_seq <= ?)
         AND (? IS NULL OR tv.status = ?)`, scope.space_id, args.after_thread_id, scope.snapshot_seq, scope.snapshot_seq, args.status, args.status);
-    if (!cursor) throw new Error('Unknown or out-of-scope thread cursor');
+    if (!cursor) throw new QueryReadError('invalid_cursor', 'Unknown or out-of-scope thread cursor');
   }
   const limit = limitValue(args.limit);
   const found = await rows(db, `SELECT tv.thread_id, tv.message_seq, tv.title, tv.status, tv.summary
@@ -81,18 +105,18 @@ async function listThreads(db, args, scope) {
 
 async function getThread(db, args, scope) {
   const row = await latestThread(db, scope, args.thread_id);
-  if (!row) throw new Error('Unknown or out-of-scope thread');
+  if (!row) throw new QueryReadError('thread_not_found', 'Unknown or out-of-scope thread');
   return threadResult(row);
 }
 
 async function getMessages(db, args, scope) {
   const thread = await latestThread(db, scope, args.thread_id);
-  if (!thread) throw new Error('Unknown or out-of-scope thread');
+  if (!thread) throw new QueryReadError('thread_not_found', 'Unknown or out-of-scope thread');
   transcriptAllowed(scope, args.thread_id, thread);
   let cursorSeq = null;
   if (args.after_message_id) {
     const cursor = await one(db, `SELECT seq FROM messages WHERE space_id = ? AND thread_id = ? AND message_id = ? AND seq <= ?`, scope.space_id, args.thread_id, args.after_message_id, scope.snapshot_seq);
-    if (!cursor) throw new Error('Unknown or out-of-scope message cursor');
+    if (!cursor) throw new QueryReadError('invalid_cursor', 'Unknown or out-of-scope message cursor');
     cursorSeq = cursor.seq;
   }
   const limit = limitValue(args.limit);
@@ -106,7 +130,7 @@ async function getMessages(db, args, scope) {
 
 async function getMessage(db, args, scope) {
   const row = await one(db, `SELECT seq, message_id, thread_id, kind, actor_id, body_json, created_at FROM messages WHERE space_id = ? AND message_id = ? AND seq <= ?`, scope.space_id, args.message_id, scope.snapshot_seq);
-  if (!row) throw new Error('Unknown or out-of-scope message');
+  if (!row) throw new QueryReadError('message_not_found', 'Unknown or out-of-scope message');
   const thread = row.thread_id ? await latestThread(db, scope, row.thread_id) : null;
   transcriptAllowed(scope, row.thread_id, thread);
   return parseMessage(row);
@@ -115,7 +139,7 @@ async function getMessage(db, args, scope) {
 async function getAgreements(db, args, scope) {
   if (args.thread_id != null) {
     const thread = await latestThread(db, scope, args.thread_id);
-    if (!thread) throw new Error('Unknown or out-of-scope agreement thread');
+    if (!thread) throw new QueryReadError('agreement_thread_not_found', 'Unknown or out-of-scope agreement thread');
   }
   let cursor = null;
   if (args.after_agreement_id) {
@@ -123,7 +147,7 @@ async function getAgreements(db, args, scope) {
       WHERE av.space_id = ? AND av.agreement_id = ? AND av.message_seq <= ?
         AND av.message_seq = (SELECT MAX(v.message_seq) FROM agreement_versions v WHERE v.space_id = av.space_id AND v.agreement_id = av.agreement_id AND v.message_seq <= ?)
         AND av.confirmed = 1 AND (av.thread_id IS NULL OR ? IS NULL OR av.thread_id = ?)`, scope.space_id, args.after_agreement_id, scope.snapshot_seq, scope.snapshot_seq, args.thread_id, args.thread_id);
-    if (!cursor) throw new Error('Unknown or out-of-scope agreement cursor');
+    if (!cursor) throw new QueryReadError('invalid_cursor', 'Unknown or out-of-scope agreement cursor');
   }
   const limit = limitValue(args.limit);
   const found = await rows(db, `SELECT av.agreement_id, av.thread_id, av.message_seq, av.version, av.text
@@ -144,7 +168,7 @@ export function createQueryExecutor(db) {
   if (!db || typeof db.prepare !== 'function') throw new Error('A D1 database binding is required');
   return async function execute(name, args, scope) {
     const handler = Object.hasOwn(handlers, name) ? handlers[name] : null;
-    if (!handler) throw new Error(`Unsupported query tool: ${name}`);
+    if (!handler) throw new QueryReadError('unsupported_query', `Unsupported query tool: ${name}`);
     assertScope(scope);
     await membership(db, scope);
     return handler(db, args, scope);

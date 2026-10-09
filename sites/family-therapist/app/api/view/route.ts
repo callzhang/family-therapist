@@ -1,4 +1,5 @@
 import { memberContext, routeError } from "../../../src/server/member-context";
+import { parseUnderstandingRecord } from "../../../src/server/queries.mjs";
 
 const PAGE = 100;
 const DISPLAY = 50;
@@ -38,8 +39,8 @@ export async function GET(request: Request) {
       messages = page.items;
       const latest = await context.db.prepare("SELECT message_id, body_json, created_at FROM messages WHERE space_id = ? AND thread_id = ? AND kind = 'understanding_updated' AND seq <= ? ORDER BY seq DESC LIMIT 1").bind(context.scope.space_id, thread.thread_id, context.scope.snapshot_seq).first<{message_id:string;body_json:string;created_at:string}>();
       if (latest) {
-        try { understanding = { ...JSON.parse(latest.body_json), message_id: latest.message_id, created_at: latest.created_at }; }
-        catch { understanding = { unsupported: true, message_id: latest.message_id, created_at: latest.created_at }; }
+        const record = parseUnderstandingRecord(latest.body_json, latest.message_id) as Record<string, unknown>;
+        understanding = { ...record, message_id: latest.message_id, created_at: latest.created_at };
       }
     }
     const membersResult = await context.db.prepare("SELECT user_id, role FROM members WHERE space_id = ? ORDER BY role").bind(context.scope.space_id).all();
