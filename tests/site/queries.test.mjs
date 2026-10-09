@@ -76,6 +76,10 @@ test('incremental and full pages use exclusive UUID cursors and stable ordering'
     const second = await execute('get_messages', { thread_id: ids.consultation, after_message_id: first.next_after_id, limit: 1 }, { ...scope, snapshot_seq: scope.snapshot_seq + 1 });
     assert.deepEqual(second.items.map((item) => item.message_id), [ids.message2]);
     assert.equal(second.has_more, false);
+    assert.equal(second.next_after_id, ids.message2);
+    const empty = await execute('get_messages', { thread_id: ids.consultation, after_message_id: second.next_after_id, limit: 1 }, { ...scope, snapshot_seq: scope.snapshot_seq + 1 });
+    assert.deepEqual(empty.items, []);
+    assert.equal(empty.next_after_id, ids.message2);
     const all = await execute('get_messages', { thread_id: ids.consultation, after_message_id: null, limit: 20 }, { ...scope, snapshot_seq: scope.snapshot_seq + 1 });
     assert.deepEqual(all.items.map((item) => item.message_id), [ids.message1, ids.message2]);
     assert.deepEqual(all.items[0].body, { text: 'one' });
@@ -102,6 +106,11 @@ test('thread reads select the latest version at the snapshot, and lists page by 
     assert.equal(page.has_more, true);
     const next = await execute('list_threads', { status: null, after_thread_id: page.next_after_id, limit: 10 }, { ...scope, snapshot_seq: seq(ids.message3) });
     assert.equal(next.items.some((item) => item.thread_id === ids.oldThread), true);
+    assert.equal(next.has_more, false);
+    assert.equal(next.next_after_id, next.items.at(-1).thread_id);
+    const empty = await execute('list_threads', { status: null, after_thread_id: next.next_after_id, limit: 10 }, { ...scope, snapshot_seq: seq(ids.message3) });
+    assert.deepEqual(empty.items, []);
+    assert.equal(empty.next_after_id, next.next_after_id);
   } finally { db.close(); }
 });
 
@@ -134,6 +143,13 @@ test('agreements return confirmed snapshot versions and global principles', asyn
     const result = await execute('get_agreements', { thread_id: ids.consultation, after_agreement_id: null, limit: 20 }, { ...scope, snapshot_seq: scope.snapshot_seq + 1 });
     assert.deepEqual(result.items.map((item) => item.text).sort(), ['Current agreement', 'Global principle']);
     assert.equal(result.items.some((item) => item.text === 'Unconfirmed'), false);
+    const first = await execute('get_agreements', { thread_id: ids.consultation, after_agreement_id: null, limit: 1 }, { ...scope, snapshot_seq: scope.snapshot_seq + 1 });
+    const last = await execute('get_agreements', { thread_id: ids.consultation, after_agreement_id: first.next_after_id, limit: 10 }, { ...scope, snapshot_seq: scope.snapshot_seq + 1 });
+    assert.equal(last.has_more, false);
+    assert.equal(last.next_after_id, last.items.at(-1).agreement_id);
+    const empty = await execute('get_agreements', { thread_id: ids.consultation, after_agreement_id: last.next_after_id, limit: 10 }, { ...scope, snapshot_seq: scope.snapshot_seq + 1 });
+    assert.deepEqual(empty.items, []);
+    assert.equal(empty.next_after_id, last.next_after_id);
   } finally { db.close(); }
 });
 
@@ -143,5 +159,24 @@ test('malformed JSON and unknown tools fail explicitly', async () => {
     db.run('UPDATE messages SET body_json = ? WHERE message_id = ?', '{broken', ids.message1);
     await assert.rejects(execute('get_messages', { thread_id: ids.consultation, after_message_id: null, limit: 10 }, scope), /JSON/i);
     await assert.rejects(execute('run_sql', {}, scope), /unsupported.*tool/i);
+    await assert.rejects(execute('toString', {}, scope), /unsupported.*tool/i);
+    await assert.rejects(execute('constructor', {}, scope), /unsupported.*tool/i);
+  } finally { db.close(); }
+});
+
+
+test('agreement thread filter must name a thread visible at the requested snapshot', async () => {
+  const { db, execute, scope } = setup();
+  try {
+    await assert.rejects(execute('get_agreements', { thread_id: ids.foreignThread, after_agreement_id: null, limit: 10 }, scope), /thread/i);
+    await assert.rejects(execute('get_agreements', { thread_id: ids.consultation, after_agreement_id: null, limit: 10 }, { ...scope, snapshot_seq: 0 }), /thread/i);
+  } finally { db.close(); }
+});
+
+test('malformed D1 result envelopes fail explicitly instead of looking like empty history', async () => {
+  const { db, scope } = setup();
+  try {
+    const malformedDb = { prepare(sql) { const statement = db.prepare(sql); return { bind(...values) { const bound = statement.bind(...values); return { first: () => bound.first(), all: async () => ({}) }; } }; } };
+    await assert.rejects(createQueryExecutor(malformedDb)('get_messages', { thread_id: ids.consultation, after_message_id: null, limit: 10 }, scope), /result/i);
   } finally { db.close(); }
 });
