@@ -54,12 +54,15 @@ export async function createResponsesRequest({ apiKey, baseUrl, fetchImpl = fetc
     let response;
     try {
       response = await fetchImpl(endpoint, {
-        method: 'POST', redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
+        method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(timeoutMs),
         headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json', 'user-agent': 'FamilyTherapist/1.0' },
         body: JSON.stringify(payload),
       });
     } catch {
       throw new ResponsesProviderError('Provider request could not be completed.', { code: 'provider_transport_error' });
+    }
+    if (response.status >= 300 && response.status < 400) {
+      throw new ResponsesProviderError('Provider redirect responses are not allowed.', { code: 'provider_redirect_error' });
     }
     const requestIdHeader = response.headers.get('x-request-id');
     const requestId = requestIdHeader && /^[\w.-]{1,128}$/.test(requestIdHeader) ? requestIdHeader : null;
