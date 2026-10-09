@@ -1,6 +1,17 @@
 export function initialDiscussion(members) {
   if (members.length !== 2 || new Set(members).size !== 2) throw new Error('two_members_required');
-  return { members: [...members], threads: {}, proposals: {}, agreements: [], revision: 0 };
+  return { members: [...members], threads: {}, proposals: {}, agreements: [], revision: 0, principle_revision: 0 };
+}
+
+function updateThread(thread, changes) {
+  const changed = Object.entries(changes).some(([key, value]) => thread[key] !== value);
+  if (!changed) return;
+  Object.assign(thread, changes);
+  thread.semantic_revision += 1;
+}
+
+function recordThreadAgreement(thread) {
+  thread.semantic_revision += 1;
 }
 
 function requireText(value) {
@@ -14,6 +25,7 @@ function validateProposal(state, p) {
   switch (p.kind) {
     case 'consensus':
     case 'settle':
+    case 'principle':
       if (thread.status !== 'active') throw new Error('not_active');
       break;
     case 'reopen':
@@ -40,7 +52,7 @@ export function applyDiscussion(state, actor, action) {
       requireText(action.title);
       const active = Object.values(next.threads).some(t => t.status === 'active');
       Object.defineProperty(next.threads, action.id, {
-        value: { id: action.id, title: action.title, status: active ? 'pending' : 'active' },
+        value: { id: action.id, title: action.title, summary: '', status: active ? 'pending' : 'active', semantic_revision: 1 },
         enumerable: true, configurable: true, writable: true,
       });
       next.revision += 1;
@@ -48,10 +60,15 @@ export function applyDiscussion(state, actor, action) {
     }
     case 'propose': {
       if (Object.hasOwn(next.proposals, action.id)) throw new Error('duplicate_proposal');
+      const thread = next.threads[action.thread_id];
+      const target = action.kind === 'switch' ? next.threads[action.target_id] : null;
       const p = {
         id: action.id, kind: action.kind, thread_id: action.thread_id,
         target_id: action.target_id ?? null, text: action.text,
-        revision: next.revision, approvals: [], applied: false,
+        thread_revision: thread?.semantic_revision ?? null,
+        target_revision: target?.semantic_revision ?? null,
+        principle_revision: next.principle_revision,
+        approvals: [], applied: false,
       };
       validateProposal(next, p);
       Object.defineProperty(next.proposals, p.id, {
@@ -62,8 +79,14 @@ export function applyDiscussion(state, actor, action) {
     case 'approve': {
       if (!Object.hasOwn(next.proposals, action.id)) throw new Error('unknown_proposal');
       const p = next.proposals[action.id];
+      if (action.text !== p.text) throw new Error('approval_text_mismatch');
       if (p.applied) return next;
-      if (p.revision !== next.revision) throw new Error('stale_proposal');
+      const source = next.threads[p.thread_id];
+      if (!source || source.semantic_revision !== p.thread_revision || p.principle_revision !== next.principle_revision) throw new Error('stale_proposal');
+      if (p.kind === 'switch') {
+        const target = next.threads[p.target_id];
+        if (!target || target.semantic_revision !== p.target_revision) throw new Error('stale_proposal');
+      }
       validateProposal(next, p);
       if (!p.approvals.includes(actor)) p.approvals.push(actor);
       if (!next.members.every(m => p.approvals.includes(m))) return next;
@@ -71,16 +94,22 @@ export function applyDiscussion(state, actor, action) {
         case 'consensus':
         case 'settle':
           next.agreements.push({ proposal_id: p.id, thread_id: p.thread_id, text: p.text });
-          if (p.kind === 'settle') next.threads[p.thread_id].status = 'settled';
+          if (p.kind === 'settle') updateThread(next.threads[p.thread_id], { status: 'settled', summary: p.text });
+          else recordThreadAgreement(next.threads[p.thread_id]);
+          break;
+        case 'principle':
+          next.agreements.push({ proposal_id: p.id, thread_id: null, text: p.text });
+          next.principle_revision += 1;
+          recordThreadAgreement(next.threads[p.thread_id]);
           break;
         case 'reopen':
-          next.threads[p.thread_id].status = 'pending';
+          updateThread(next.threads[p.thread_id], { status: 'pending' });
           break;
         case 'switch':
           for (const thread of Object.values(next.threads)) {
-            if (thread.status === 'active') thread.status = 'pending';
+            if (thread.status === 'active') updateThread(thread, { status: 'pending' });
           }
-          next.threads[p.target_id].status = 'active';
+          updateThread(next.threads[p.target_id], { status: 'active' });
           break;
       }
       p.applied = true;

@@ -37,6 +37,13 @@ export const therapistTasks = sqliteTable('therapist_tasks', {
   createdAt: text('created_at').notNull(),
 }, (table) => [check('therapist_tasks_status_check', sql`${table.status} = 'queued'`), index('therapist_tasks_status_created').on(table.status, table.createdAt)]);
 
+export const discussionProjection = sqliteTable('discussion_projection', {
+  spaceId: text('space_id').notNull().primaryKey(),
+  storageRevision: integer('storage_revision').notNull(),
+  stateJson: text('state_json').notNull(),
+  lastCommandId: text('last_command_id').notNull(),
+}, (table) => [check('discussion_projection_revision_check', sql`${table.storageRevision} > 0`)]);
+
 export const threadVersions = sqliteTable('thread_versions', {
   spaceId: text('space_id').notNull(),
   threadId: text('thread_id').notNull(),

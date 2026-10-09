@@ -1,6 +1,6 @@
 # 家庭关系咨询系统
 
-本仓库按阶段规划并实现一对夫妻使用的家庭关系咨询系统。当前阶段 A 只实现两个与平台无关的协议模块：按服务器顺序分页读取历史，以及双方对话题、提案和共识的状态转换。它们是供后续适配器使用的纯规则，不包含生产 API、身份认证、持久数据库、模型调用或部署。
+本仓库按阶段规划并实现一对夫妻使用的家庭关系咨询系统。当前代码包括历史和讨论协议、成员 Token API 边界、只读网站查询适配器，以及本地验证过的表达 intake 和持久讨论命令。网站仍只读；命令 API 不代表 Therapist worker、模型调用或生产部署已经完成。
 
 阶段 A 的精确设计与范围见[设计规格](docs/superpowers/specs/2026-10-08-family-therapist-design.md)、[系统路线图](docs/superpowers/plans/2026-10-08-family-therapist-roadmap.md)和[协议实现计划](docs/superpowers/plans/2026-10-08-family-therapist-protocol.md)。生产适配器应遵守[协议边界](docs/operations/protocol.md)。
 
@@ -16,6 +16,6 @@ node --test tests/protocol/history.test.mjs tests/protocol/discussion.test.mjs
 node --test tests/protocol/history.test.mjs tests/protocol/discussion.test.mjs tests/therapist/responses.test.mjs
 ```
 
-38 项测试通过。云端 Therapist Skill 已编写；Sites starter 已注册和构建，但产品 API、数据库适配、网页和本地客户端尚未交付。模型列表鉴权成功，实际生成因 API 余额耗尽而阻塞，详见[当前验证记录](docs/verification/2026-10-08-responses-runtime.md)。
+协议及持久化 SQLite 集成测试涵盖双人确认、CAS 并发、原子回滚和不可覆盖的 UUID 回执。云端 Therapist Skill 已编写；Responses API 实际生成曾因余额耗尽而阻塞，详见[当前验证记录](docs/verification/2026-10-08-responses-runtime.md)。本地测试和构建不代表 hosted migration、线上运行或外部执行结果。
 
 本地 Therapist Assistant 的指令源与操作边界已写入 [Skill](skills/local-therapist-assistant/SKILL.md) 和[运维说明](docs/operations/local-assistant.md)，并附有虚构行为评估案例规格。此为文档交付，不是本地客户端、云端消息 API、认证配置、heartbeat 或自动更新实现；阶段 D 仍未完成。
