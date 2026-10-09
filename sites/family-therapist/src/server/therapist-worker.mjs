@@ -344,7 +344,7 @@ async function publish({ db, task, leaseId, now, config, output }) {
 /** @param {{db: any, space_id: string, actor_id: string, config: any, request: (payload: any) => Promise<any>, task_message_id?: string | null, now?: Date | (() => Date), lease_ms?: number}} options
  * Claims and runs one accepted expression using only the injected, trusted server config.
  */
-export async function runNextTherapistTask({ db, space_id: spaceId, actor_id: actorId, config, request, task_message_id: taskMessageId = null, now = new Date(), lease_ms: leaseMs = 120_000 }) {
+export async function runNextTherapistTask({ db, space_id: spaceId, actor_id: actorId, config, request, task_message_id: taskMessageId = null, now = () => new Date(), lease_ms: leaseMs = 120_000 }) {
   if (!db || typeof db.prepare !== 'function' || typeof spaceId !== 'string' || !spaceId || typeof actorId !== 'string' || !actorId ||
     !config || typeof request !== 'function' || !Number.isSafeInteger(leaseMs) || leaseMs < 1_000 ||
     (taskMessageId !== null && !UUID.test(taskMessageId))) throw new Error('worker_config_invalid');
