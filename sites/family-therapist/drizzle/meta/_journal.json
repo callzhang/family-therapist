@@ -15,6 +15,13 @@
       "when": 1791509771091,
       "tag": "0001_wide_mephisto",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791512179155,
+      "tag": "0002_many_captain_america",
+      "breakpoints": true
     }
   ]
 }

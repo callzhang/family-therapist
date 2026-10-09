@@ -18,6 +18,15 @@ export const messages = sqliteTable('messages', {
   createdAt: text('created_at').notNull(),
 }, (table) => [uniqueIndex('messages_message_id_unique').on(table.messageId), index('messages_space_thread_seq').on(table.spaceId, table.threadId, table.seq)]);
 
+export const therapistTasks = sqliteTable('therapist_tasks', {
+  messageId: text('message_id').notNull().primaryKey().references(() => messages.messageId),
+  messageSeq: integer('message_seq').notNull().references(() => messages.seq),
+  spaceId: text('space_id').notNull(),
+  threadId: text('thread_id').notNull(),
+  status: text('status', { enum: ['queued'] }).notNull(),
+  createdAt: text('created_at').notNull(),
+}, (table) => [check('therapist_tasks_status_check', sql`${table.status} = 'queued'`), index('therapist_tasks_status_created').on(table.status, table.createdAt)]);
+
 export const threadVersions = sqliteTable('thread_versions', {
   spaceId: text('space_id').notNull(),
   threadId: text('thread_id').notNull(),
