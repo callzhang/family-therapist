@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Between Us · Shared Understanding",
-  description: "A private shared space for relationship consultation and understanding.",
+  title: "我们之间 · 共同理解",
+  description: "为彼此理解而设的关系咨询共同空间。",
   other: {
-    "codex-preview": "relationship-consultation",
+    "codex-preview": "我们之间 · 关系咨询",
   },
   icons: {
     icon: "/favicon.svg",
@@ -19,7 +19,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="zh-CN">
       <body className="antialiased">{children}</body>
     </html>
   );

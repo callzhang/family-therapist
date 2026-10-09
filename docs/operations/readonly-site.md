@@ -12,3 +12,12 @@ Use only a local D1 database and a local R2 bucket. Do not seed hosted services 
 8. Remove the local fixture database and bucket state when browser QA is complete.
 
 The implementation task does not run this fixture or seed any data. Production use requires independently configured D1/R2 bindings and a verified hosted migration.
+
+## Primary browser acceptance
+
+- Check the Chinese page title and readable three-item navigation at phone width, then use the visible thread selector to switch pending, active, and settled conversations.
+- Open a settled item from the all-threads archive and verify its transcript is shown without changing its status. When the page omits earlier messages, use both full-export links.
+- Verify only `member_expression` and `therapist_reply` appear as dialogue. Confirm each automated source link uses a readable speaker label and points to a visible message; an unsupported expression body displays the JSONL access notice.
+- Remove the authenticated identity to verify the page offers the ChatGPT sign-in link and does not show the empty-space message. Separately verify an authenticated member with no records sees the calm empty state.
+- Check a deliberately malformed latest `understanding_updated` record fails with an explicit read error instead of showing an empty or fabricated understanding summary.
+- Compare downloaded archives with local D1 rows across multiple pages. Confirm Markdown speakers and UUIDs, JSONL raw-body preservation, and that a readback with mismatched R2 ETag or size cannot return a successful download.
