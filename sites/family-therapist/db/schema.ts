@@ -1,11 +1,21 @@
 import { sql } from 'drizzle-orm';
-import { check, integer, primaryKey, sqliteTable, text, uniqueIndex, index } from 'drizzle-orm/sqlite-core';
+import { check, foreignKey, integer, primaryKey, sqliteTable, text, uniqueIndex, index } from 'drizzle-orm/sqlite-core';
 
 export const members = sqliteTable('members', {
   spaceId: text('space_id').notNull(),
   userId: text('user_id').notNull(),
   role: text('role').notNull(),
 }, (table) => [primaryKey({ columns: [table.spaceId, table.userId] })]);
+
+export const memberTokens = sqliteTable('member_tokens', {
+  tokenSha256: text('token_sha256').primaryKey(),
+  spaceId: text('space_id').notNull(),
+  userId: text('user_id').notNull(),
+  revokedAt: text('revoked_at'),
+}, (table) => [
+  uniqueIndex('member_tokens_space_user_unique').on(table.spaceId, table.userId),
+  foreignKey({ columns: [table.spaceId, table.userId], foreignColumns: [members.spaceId, members.userId] }).onDelete('cascade'),
+]);
 
 export const messages = sqliteTable('messages', {
   seq: integer('seq').primaryKey({ autoIncrement: true }),

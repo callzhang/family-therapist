@@ -1,3 +1,4 @@
 .superpowers/
 .env.local
 *.tsbuildinfo
+.local-members/
