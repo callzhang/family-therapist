@@ -16,6 +16,7 @@ test('strict schema requires all output fields and forbids additional fields at 
   assert.deepEqual(THERAPIST_OUTPUT_SCHEMA.required, ['reply', 'source_message_ids', 'common_points', 'differences', 'hypotheses', 'consensus_proposal']);
   assert.equal(THERAPIST_OUTPUT_SCHEMA.additionalProperties, false);
   assert.deepEqual(THERAPIST_OUTPUT_SCHEMA.properties.consensus_proposal.anyOf[1], { type: 'null' });
+  assert.equal(THERAPIST_OUTPUT_SCHEMA.properties.consensus_proposal.anyOf[0].properties.source_message_ids.minItems, 2);
   for (const key of ['common_points', 'differences', 'hypotheses']) assert.equal(THERAPIST_OUTPUT_SCHEMA.properties[key].items.additionalProperties, false);
   assert.equal(THERAPIST_OUTPUT_SCHEMA.properties.consensus_proposal.anyOf[0].additionalProperties, false);
 });
@@ -35,6 +36,24 @@ test('accepts a common point supported by both distinct members and returns a fr
 test('accepts a one-sided reply with no automatic common points', () => {
   const value = output({ source_message_ids: [msgA], common_points: [], differences: [{ text: 'One person describes feeling rushed.', source_message_ids: [msgA] }] });
   assert.deepEqual(validateTherapistOutput(value, context([at(msgA, memberA)])), value);
+});
+
+test('accepts platform fixture space and member identities while retaining UUID message and thread ids', () => {
+  const fixtureSpace = 'local-fixture';
+  const fixtureMembers = ['local_seedy', 'fixture_partner'];
+  const messages = [
+    { ...at(msgA, fixtureMembers[0]), space_id: fixtureSpace, seq: 1 },
+    { ...at(msgB, fixtureMembers[1]), space_id: fixtureSpace, seq: 2 },
+  ];
+  const fixtureContext = { space_id: fixtureSpace, thread_id: thread, snapshot_seq: 2, member_ids: fixtureMembers, messages };
+  const result = validateTherapistOutput(output(), fixtureContext);
+  assert.deepEqual(result.common_points[0].source_message_ids, [msgA, msgB]);
+});
+
+test('rejects blank scope or member identities and blank membership values', () => {
+  assert.throws(() => validateTherapistOutput(output(), { ...context(), space_id: '  ' }), /context space_id/i);
+  assert.throws(() => validateTherapistOutput(output(), { ...context(), member_ids: [memberA, ''] }), /two distinct members/i);
+  assert.throws(() => validateTherapistOutput(output(), { ...context(), member_ids: [memberA, '   '] }), /two distinct members/i);
 });
 
 test('rejects a common point when all cited evidence comes from only one member', () => {
@@ -71,11 +90,20 @@ test('rejects extra fields and malformed, blank, oversized, or structurally inco
 });
 
 test('consensus proposal remains an unconfirmed proposal and is never promoted to agreement', () => {
-  const value = output({ consensus_proposal: { text: 'Could you try checking in before changing the plan?', source_message_ids: [msgA] } });
+  const value = output({ consensus_proposal: { text: 'Could you try checking in before changing the plan?', source_message_ids: [msgA, msgB] } });
   const result = validateTherapistOutput(value, context());
   assert.deepEqual(result.consensus_proposal, value.consensus_proposal);
   assert.equal(Object.hasOwn(result, 'agreement'), false);
   assert.equal(Object.hasOwn(result, 'settled'), false);
+});
+
+test('rejects a consensus proposal when only one member has submitted evidence', () => {
+  const value = output({ source_message_ids: [msgA], common_points: [], consensus_proposal: { text: 'Try checking in before changing the plan?', source_message_ids: [msgA] } });
+  assert.throws(() => validateTherapistOutput(value, context([at(msgA, memberA)])), /both distinct members/i);
+});
+
+test('rejects a reference to a zero-sequence non-persisted message', () => {
+  assert.throws(() => validateTherapistOutput(output({ source_message_ids: [msgA], common_points: [] }), context([at(msgA, memberA, { seq: 0 })])), /trusted member expression/i);
 });
 
 test('requires trusted server context with exactly two distinct member identities', () => {

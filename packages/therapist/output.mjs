@@ -29,7 +29,7 @@ export const THERAPIST_OUTPUT_SCHEMA = deepFreeze({
     differences: { type: 'array', maxItems: MAX_LIST_ITEMS, items: textItemSchema() },
     hypotheses: { type: 'array', maxItems: MAX_LIST_ITEMS, items: textItemSchema() },
     consensus_proposal: {
-      anyOf: [textItemSchema(), { type: 'null' }],
+      anyOf: [textItemSchema(2), { type: 'null' }],
     },
   },
   required: OUTPUT_FIELDS,
@@ -65,13 +65,17 @@ function assertUuid(value, label) {
   if (typeof value !== 'string' || !UUID.test(value)) reject(`${label} must be a UUID`);
 }
 
+function assertIdentity(value, label) {
+  if (typeof value !== 'string' || !value.trim()) reject(`${label} must be a nonblank identity string`);
+}
+
 function assertContext(context) {
   if (!context || typeof context !== 'object' || Array.isArray(context)) reject('Invalid server evidence context');
   const { space_id: spaceId, thread_id: threadId, snapshot_seq: snapshotSeq, member_ids: memberIds, messages } = context;
-  assertUuid(spaceId, 'Context space_id');
+  assertIdentity(spaceId, 'Context space_id');
   assertUuid(threadId, 'Context thread_id');
   if (!Number.isSafeInteger(snapshotSeq) || snapshotSeq < 0) reject('Invalid server evidence context snapshot_seq');
-  if (!Array.isArray(memberIds) || memberIds.length !== 2 || memberIds.some((id) => typeof id !== 'string' || !UUID.test(id)) || new Set(memberIds).size !== 2) {
+  if (!Array.isArray(memberIds) || memberIds.length !== 2 || memberIds.some((id) => typeof id !== 'string' || !id.trim()) || new Set(memberIds).size !== 2) {
     reject('Context must identify exactly two distinct members');
   }
   if (!Array.isArray(messages)) reject('Invalid server evidence context messages');
@@ -99,7 +103,7 @@ function assertCitationList(ids, label, evidence, minimum = 1) {
     seen.add(id);
     const message = evidence.byId.get(id);
     if (!message || message.space_id !== evidence.spaceId || message.thread_id !== evidence.threadId ||
-      !Number.isSafeInteger(message.seq) || message.seq < 0 || message.seq > evidence.snapshotSeq ||
+      !Number.isSafeInteger(message.seq) || message.seq <= 0 || message.seq > evidence.snapshotSeq ||
       message.kind !== 'member_expression' || !evidence.memberIds.has(message.actor_id)) {
       reject(`${label} citation is not a trusted member expression in this scope and snapshot`);
     }
@@ -144,7 +148,10 @@ export function validateTherapistOutput(output, context) {
   if (output.consensus_proposal !== null) {
     assertExactObject(output.consensus_proposal, ['text', 'source_message_ids'], 'consensus_proposal');
     assertText(output.consensus_proposal.text, 'consensus_proposal text', MAX_ITEM_TEXT_LENGTH);
-    assertCitationList(output.consensus_proposal.source_message_ids, 'consensus_proposal', evidence);
+    const proposalMessages = assertCitationList(output.consensus_proposal.source_message_ids, 'consensus_proposal', evidence, 2);
+    if (new Set(proposalMessages.map(({ actor_id: actorId }) => actorId)).size !== 2) {
+      reject('A consensus proposal must cite expressions from both distinct members');
+    }
   }
   return deepFreeze(structuredClone(output));
 }
