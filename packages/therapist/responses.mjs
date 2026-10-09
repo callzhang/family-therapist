@@ -71,6 +71,9 @@ export async function runTherapistTurn({ model, instructions, input, scope, maxT
         if (callIds.some((id) => typeof id !== 'string' || !id) || new Set(callIds).size !== callIds.length) {
           throw new Error('Provider response contains missing or duplicate function call ids');
         }
+        if (calls.some((call) => state.tool_results.some((result) => result.call_id === call.call_id))) {
+          throw new Error('Provider response reuses a function call id already executed');
+        }
         if (calls.length) {
           state.pending_calls = calls.map(({ type, call_id, name, arguments: args }) => ({ type, call_id, name, arguments: args }));
           state.phase = 'tools_pending';

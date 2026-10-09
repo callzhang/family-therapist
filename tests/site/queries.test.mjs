@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { createQueryExecutor } from '../../sites/family-therapist/src/server/queries.mjs';
+import { validateToolArguments } from '../../packages/therapist/tools.mjs';
 
 class D1Sqlite {
   constructor() { this.sqlite = new DatabaseSync(':memory:'); }
@@ -111,6 +112,28 @@ test('thread reads select the latest version at the snapshot, and lists page by 
     const empty = await execute('list_threads', { status: null, after_thread_id: next.next_after_id, limit: 10 }, { ...scope, snapshot_seq: seq(ids.message3) });
     assert.deepEqual(empty.items, []);
     assert.equal(empty.next_after_id, next.next_after_id);
+  } finally { db.close(); }
+});
+
+test('omitted list and agreement filters canonicalize to the same SQLite results as explicit nulls', async () => {
+  const { db, execute, scope, seq } = setup();
+  try {
+    const omittedThreads = validateToolArguments('list_threads', {});
+    const explicitThreads = validateToolArguments('list_threads', { status: null, after_thread_id: null, limit: null });
+    assert.deepEqual(omittedThreads, explicitThreads);
+    const implicitThreadPage = await execute('list_threads', omittedThreads, { ...scope, snapshot_seq: seq(ids.message3) });
+    const explicitThreadPage = await execute('list_threads', explicitThreads, { ...scope, snapshot_seq: seq(ids.message3) });
+    assert.deepEqual(implicitThreadPage, explicitThreadPage);
+
+    const omittedAgreements = validateToolArguments('get_agreements', {});
+    const explicitAgreements = validateToolArguments('get_agreements', { thread_id: null, after_agreement_id: null, limit: null });
+    assert.deepEqual(omittedAgreements, explicitAgreements);
+    const implicitAgreementPage = await execute('get_agreements', omittedAgreements, { ...scope, snapshot_seq: seq(ids.message2) });
+    const explicitAgreementPage = await execute('get_agreements', explicitAgreements, { ...scope, snapshot_seq: seq(ids.message2) });
+    assert.deepEqual(implicitAgreementPage, explicitAgreementPage);
+
+    const omittedMessages = validateToolArguments('get_messages', { thread_id: ids.consultation });
+    assert.deepEqual(omittedMessages, { thread_id: ids.consultation, after_message_id: null, limit: null });
   } finally { db.close(); }
 });
 

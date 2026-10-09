@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { runTherapistTurn } from '../../../../packages/therapist/responses.mjs';
+import { validateToolArguments } from '../../../../packages/therapist/tools.mjs';
 import { TherapistOutputValidationError, THERAPIST_OUTPUT_SCHEMA, validateTherapistOutput } from '../../../../packages/therapist/output.mjs';
 import { createQueryExecutor } from './queries.mjs';
 
@@ -250,6 +251,39 @@ async function failOwned(db, task, leaseId, now, error) {
 
 const RETRYABLE_PROVIDER_CODES = new Set(['credit_balance_exhausted', 'rate_limit_exceeded', 'provider_http_error', 'provider_transport_error']);
 
+function retryableToolsCheckpoint(task, runConfig) {
+  let checkpoint;
+  try { checkpoint = JSON.parse(task.checkpoint_json); } catch { return false; }
+  const scope = checkpoint?.scope;
+  if (!checkpoint || checkpoint.phase !== 'tools_pending' || checkpoint.status !== 'failed' ||
+    checkpoint.run_id !== runConfig.scope.run_id || checkpoint.model !== runConfig.model ||
+    JSON.stringify(scope) !== JSON.stringify(runConfig.scope) ||
+    !Array.isArray(checkpoint.pending_calls) || !checkpoint.pending_calls.length ||
+    !Array.isArray(checkpoint.tool_results) || !Number.isSafeInteger(checkpoint.tool_call_count) ||
+    checkpoint.tool_call_count < 0 || checkpoint.tool_call_count > runConfig.max_tool_calls) return false;
+
+  const savedCallIds = new Set();
+  for (const result of checkpoint.tool_results) {
+    if (!result || typeof result.call_id !== 'string' || !result.call_id || savedCallIds.has(result.call_id)) return false;
+    savedCallIds.add(result.call_id);
+  }
+
+  const pendingCallIds = new Set();
+  let unexecutedCount = 0;
+  try {
+    for (const call of checkpoint.pending_calls) {
+      if (!call || call.type !== 'function_call' || typeof call.call_id !== 'string' || !call.call_id || pendingCallIds.has(call.call_id) ||
+        typeof call.name !== 'string' || typeof call.arguments !== 'string') return false;
+      pendingCallIds.add(call.call_id);
+      if (savedCallIds.has(call.call_id)) continue;
+      const args = JSON.parse(call.arguments);
+      validateToolArguments(call.name, args);
+      unexecutedCount += 1;
+    }
+  } catch { return false; }
+  return checkpoint.tool_call_count + unexecutedCount <= runConfig.max_tool_calls;
+}
+
 /** Requeues one failed task after an explicit authenticated retry request; its checkpoint and frozen run remain unchanged. */
 export async function retryFailedTherapistTask({ db, space_id: spaceId, actor_id: actorId, message_id: messageId, now = new Date() }) {
   const timestamp = nowIso(typeof now === 'function' ? now() : now);
@@ -258,14 +292,22 @@ export async function retryFailedTherapistTask({ db, space_id: spaceId, actor_id
   if (!member) return { status: 'not_found' };
   const task = await first(db, `SELECT * FROM therapist_tasks WHERE message_id=? AND space_id=? AND status='failed'`, messageId, spaceId);
   if (!task) return { status: 'not_found' };
-  const retryable = RETRYABLE_PROVIDER_CODES.has(task.last_error_code) || task.last_error_status === 429 ||
-    (Number.isInteger(task.last_error_status) && task.last_error_status >= 500 && task.last_error_status <= 599);
-  if (!retryable || task.retry_count >= 3 || !task.checkpoint_json || !task.run_config_json) {
+  if (task.retry_count >= 3 || !task.checkpoint_json || !task.run_config_json) {
     return { status: 'retry_unavailable', message_id: messageId, error_code: task.last_error_code ?? 'retry_limit_reached' };
   }
   const source = await sourceRecord(db, task);
-  try { validateFrozenRunConfig(task, JSON.parse(task.run_config_json), source); }
+  let runConfig;
+  try {
+    runConfig = JSON.parse(task.run_config_json);
+    validateFrozenRunConfig(task, runConfig, source);
+  }
   catch { return { status: 'retry_unavailable', message_id: messageId, error_code: 'run_config_invalid' }; }
+  const providerRetryable = RETRYABLE_PROVIDER_CODES.has(task.last_error_code) || task.last_error_status === 429 ||
+    (Number.isInteger(task.last_error_status) && task.last_error_status >= 500 && task.last_error_status <= 599);
+  const orchestrationRetryable = task.last_error_code === 'orchestration_failed' && retryableToolsCheckpoint(task, runConfig);
+  if (!providerRetryable && !orchestrationRetryable) {
+    return { status: 'retry_unavailable', message_id: messageId, error_code: task.last_error_code ?? 'retry_limit_reached' };
+  }
   const result = await run(db, `UPDATE therapist_tasks SET status='queued', retry_count=retry_count+1
     WHERE message_id=? AND space_id=? AND status='failed' AND retry_count=? AND retry_count<3
       AND checkpoint_json IS NOT NULL AND run_config_json IS NOT NULL`, messageId, spaceId, task.retry_count);

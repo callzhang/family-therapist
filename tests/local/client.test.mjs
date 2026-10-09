@@ -35,6 +35,18 @@ test('commands require exact immutable text shape and strict read schemas', asyn
   assert.equal(calls.length, 1);
 });
 
+test('query sends canonical null defaults for omitted optional filters', async () => {
+  let observed;
+  const client = createAgentClient({ member, connection, fetchImpl: async (_url, options) => {
+    observed = JSON.parse(options.body);
+    return Response.json({ items: [], has_more: false });
+  } });
+
+  await client.query('list_threads', {});
+
+  assert.deepEqual(observed, { status: null, after_thread_id: null, limit: null });
+});
+
 test('fetch failures do not expose request credentials', async () => {
   const client = createAgentClient({ member, connection, fetchImpl: async () => { throw new Error(member.member_token); } });
   await assert.rejects(client.getDiscussion(), (error) => {

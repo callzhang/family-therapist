@@ -1,10 +1,10 @@
-const nullableUuid = { type: ['string', 'null'], format: 'uuid' };
+const nullableUuid = { type: ['string', 'null'], format: 'uuid', default: null };
 const uuid = { type: 'string', format: 'uuid' };
-const nullableInteger = { type: ['integer', 'null'], minimum: 1, maximum: 100 };
-const nullableStatus = { type: ['string', 'null'], enum: ['pending', 'active', 'settled', null] };
+const nullableInteger = { type: ['integer', 'null'], minimum: 1, maximum: 100, default: null };
+const nullableStatus = { type: ['string', 'null'], enum: ['pending', 'active', 'settled', null], default: null };
 const objectTool = (name, description, properties) => ({
-  type: 'function', name, description, strict: true,
-  parameters: { type: 'object', properties, required: Object.keys(properties), additionalProperties: false },
+  type: 'function', name, description, strict: false,
+  parameters: { type: 'object', properties, required: Object.entries(properties).filter(([, schema]) => !schema.type.includes?.('null')).map(([key]) => key), additionalProperties: false },
 });
 
 export const TOOL_DEFINITIONS = Object.freeze([
@@ -25,16 +25,21 @@ export function validateToolArguments(name, value) {
   const allowed = tool.parameters.properties;
   for (const key of Object.keys(value)) if (!Object.hasOwn(allowed, key)) throw new Error(`${name} arguments contain unsupported property: ${key}`);
   for (const key of tool.parameters.required) if (!Object.hasOwn(value, key)) throw new Error(`${name} arguments missing required property: ${key}`);
+  const normalized = {};
   for (const [key, schema] of Object.entries(allowed)) {
-    const item = value[key];
-    if (item === null && schema.type.includes?.('null')) continue;
+    const item = Object.hasOwn(value, key) ? value[key] : schema.default;
     const baseType = Array.isArray(schema.type) ? schema.type.find((type) => type !== 'null') : schema.type;
+    if (item === null && schema.type.includes?.('null')) {
+      normalized[key] = null;
+      continue;
+    }
     if (baseType === 'string' && typeof item !== 'string') throw new Error(`${name} ${key} must be a UUID string or null`);
     if (baseType === 'integer' && !Number.isInteger(item)) throw new Error(`${name} ${key} must be an integer or null`);
     if (schema.format === 'uuid' && item !== null && !uuidPattern.test(item)) throw new Error(`${name} ${key} must be a UUID`);
     if (schema.minimum && item !== null && item < schema.minimum) throw new Error(`${name} ${key} must be at least ${schema.minimum}`);
     if (schema.maximum && item !== null && item > schema.maximum) throw new Error(`${name} ${key} must be at most ${schema.maximum}`);
     if (schema.enum && !schema.enum.includes(item)) throw new Error(`${name} ${key} has an unsupported value`);
+    normalized[key] = item;
   }
-  return { ...value };
+  return normalized;
 }

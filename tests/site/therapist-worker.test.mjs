@@ -429,3 +429,127 @@ test('explicit retry is bounded, preserves frozen request identity, and does not
     assert.equal(after.retry_count, 1);
   } finally { db.close(); }
 });
+
+test('explicit retry resumes an orchestration-failed checkpoint after optional tool arguments become valid', async () => {
+  const db = await database();
+  try {
+    const originalPrepare = db.prepare.bind(db);
+    let failFirstListQuery = true;
+    db.prepare = (sql) => {
+      const statement = originalPrepare(sql);
+      if (!failFirstListQuery || !sql.includes('ORDER BY tv.message_seq ASC, tv.thread_id ASC LIMIT ?')) return statement;
+      return { bind: (...values) => {
+        const bound = statement.bind(...values);
+        return { all: async () => {
+          if (failFirstListQuery) { failFirstListQuery = false; throw new Error('temporary query read failure'); }
+          return bound.all();
+        } };
+      } };
+    };
+    const failed = await runNextTherapistTask({ db, space_id: space, actor_id: ids.one, config, request: async () => ({
+      id: 'resp-pending-list', status: 'completed', output: [{
+        type: 'function_call', call_id: 'call-list', name: 'list_threads', arguments: '{}',
+      }],
+    }) });
+    assert.equal(failed.status, 'failed');
+    assert.equal(failed.error_code, 'orchestration_failed');
+    const before = await db.prepare('SELECT checkpoint_json, retry_count FROM therapist_tasks WHERE message_id=?').bind(ids.expressionOne).first();
+    const checkpoint = JSON.parse(before.checkpoint_json);
+    assert.equal(checkpoint.phase, 'tools_pending');
+    assert.equal(checkpoint.pending_calls[0].arguments, '{}');
+
+    const accepted = await retryFailedTherapistTask({ db, space_id: space, actor_id: ids.two, message_id: ids.expressionOne });
+    assert.equal(accepted.status, 'queued');
+    assert.equal(accepted.retry_count, before.retry_count + 1);
+
+    const requests = [];
+    const resumed = await runNextTherapistTask({ db, space_id: space, actor_id: ids.one, config,
+      task_message_id: ids.expressionOne,
+      request: async (payload) => {
+        requests.push(payload);
+        if (requests.length === 1) return { id: 'resp-list-done', status: 'completed', output: [] };
+        return { id: 'resp-final', status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: JSON.stringify(finalOutput()) }] }] };
+      },
+    });
+    assert.equal(resumed.status, 'completed');
+    assert.equal(requests.length, 2);
+    assert.equal(requests[0].previous_response_id, 'resp-pending-list');
+    const listResult = JSON.parse(requests[0].input[0].output);
+    assert.equal(listResult.items.length, 1);
+    assert.equal(listResult.items[0].thread_id, ids.thread);
+    const completed = await db.prepare('SELECT status, retry_count, checkpoint_json FROM therapist_tasks WHERE message_id=?').bind(ids.expressionOne).first();
+    assert.equal(completed.status, 'completed');
+    assert.equal(completed.retry_count, before.retry_count + 1);
+    assert.equal(completed.checkpoint_json, null);
+  } finally { db.close(); }
+});
+
+test('an orchestration-failed checkpoint with invalid optional tool arguments remains unavailable for retry', async () => {
+  const db = await database();
+  try {
+    const failed = await runNextTherapistTask({ db, space_id: space, actor_id: ids.one, config, request: async () => ({
+      id: 'resp-pending-invalid-list', status: 'completed', output: [{
+        type: 'function_call', call_id: 'call-list-invalid', name: 'list_threads', arguments: JSON.stringify({ status: 'unknown' }),
+      }],
+    }) });
+    assert.equal(failed.status, 'failed');
+    assert.equal(failed.error_code, 'orchestration_failed');
+    const retried = await retryFailedTherapistTask({ db, space_id: space, actor_id: ids.two, message_id: ids.expressionOne });
+    assert.equal(retried.status, 'retry_unavailable');
+    const task = await db.prepare('SELECT status, retry_count FROM therapist_tasks WHERE message_id=?').bind(ids.expressionOne).first();
+    assert.equal(task.status, 'failed');
+    assert.equal(task.retry_count, 0);
+  } finally { db.close(); }
+});
+
+test('an orchestration-failed checkpoint with a changed frozen thread scope remains unavailable for retry', async () => {
+  const db = await database();
+  try {
+    const originalPrepare = db.prepare.bind(db);
+    let failFirstListQuery = true;
+    db.prepare = (sql) => {
+      const statement = originalPrepare(sql);
+      if (!failFirstListQuery || !sql.includes('ORDER BY tv.message_seq ASC, tv.thread_id ASC LIMIT ?')) return statement;
+      return { bind: (...values) => {
+        const bound = statement.bind(...values);
+        return { all: async () => {
+          if (failFirstListQuery) { failFirstListQuery = false; throw new Error('temporary query read failure'); }
+          return bound.all();
+        } };
+      } };
+    };
+    const failed = await runNextTherapistTask({ db, space_id: space, actor_id: ids.one, config, request: async () => ({
+      id: 'resp-pending-list-scope', status: 'completed', output: [{
+        type: 'function_call', call_id: 'call-list-scope', name: 'list_threads', arguments: '{}',
+      }],
+    }) });
+    assert.equal(failed.status, 'failed');
+    const row = await db.prepare('SELECT checkpoint_json FROM therapist_tasks WHERE message_id=?').bind(ids.expressionOne).first();
+    const checkpoint = JSON.parse(row.checkpoint_json);
+    checkpoint.scope.thread_id = ids.expressionThree;
+    await db.prepare('UPDATE therapist_tasks SET checkpoint_json=? WHERE message_id=?').bind(JSON.stringify(checkpoint), ids.expressionOne).run();
+
+    const retried = await retryFailedTherapistTask({ db, space_id: space, actor_id: ids.two, message_id: ids.expressionOne });
+    assert.equal(retried.status, 'retry_unavailable');
+    assert.equal((await db.prepare('SELECT status, retry_count FROM therapist_tasks WHERE message_id=?').bind(ids.expressionOne).first()).retry_count, 0);
+  } finally { db.close(); }
+});
+
+test('an orchestration failure outside tools_pending remains unavailable for retry', async () => {
+  const db = await database();
+  try {
+    const failed = await runNextTherapistTask({ db, space_id: space, actor_id: ids.one, config,
+      request: async () => { throw new Error('provider request failed before a tool call'); },
+    });
+    assert.equal(failed.status, 'failed');
+    assert.equal(failed.error_code, 'orchestration_failed');
+    const checkpoint = JSON.parse((await db.prepare('SELECT checkpoint_json FROM therapist_tasks WHERE message_id=?').bind(ids.expressionOne).first()).checkpoint_json);
+    assert.equal(checkpoint.phase, 'request');
+
+    const retried = await retryFailedTherapistTask({ db, space_id: space, actor_id: ids.two, message_id: ids.expressionOne });
+    assert.equal(retried.status, 'retry_unavailable');
+    const task = await db.prepare('SELECT status, retry_count FROM therapist_tasks WHERE message_id=?').bind(ids.expressionOne).first();
+    assert.equal(task.status, 'failed');
+    assert.equal(task.retry_count, 0);
+  } finally { db.close(); }
+});

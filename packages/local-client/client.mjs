@@ -223,7 +223,7 @@ export function createAgentClient({ member: rawMember, connection: rawConnection
       return request('GET', '/api/updates', { query: { after_message_id, snapshot_seq, limit } });
     },
     getSkillRelease: () => request('GET', '/api/skill/release'),
-    query: (name, args) => { validateToolArguments(name, args); return request('POST', `/api/query/${encodeURIComponent(name)}`, { body: args }); },
+    query: (name, args) => { const canonicalArgs = validateToolArguments(name, args); return request('POST', `/api/query/${encodeURIComponent(name)}`, { body: canonicalArgs }); },
     getDiscussion: () => request('GET', '/api/discussion'),
     submitExpression: (command) => request('POST', '/api/messages', { body: assertExpression(command) }),
     processTherapist: (options = {}) => processTherapistRequest({ fetchImpl, connection, member, siteAccessToken: connection.site_access_token, ...assertTherapistOptions(options) }),
