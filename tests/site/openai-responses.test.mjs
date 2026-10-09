@@ -54,6 +54,32 @@ test('provider 3xx responses are rejected safely without following or forwarding
   assert.equal(requests, 1);
 });
 
+test('an external abort interrupts an in-flight provider call and remains a safe transport failure', async () => {
+  const controller = new AbortController();
+  let observedSignal;
+  const request = await createResponsesRequest({ apiKey: 'test-key', baseUrl: 'https://example.test/v1', timeoutMs: 10_000,
+    fetchImpl: async (_url, init) => {
+      observedSignal = init.signal;
+      return new Promise((_resolve, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true }));
+    } });
+  const pending = request({ model: 'test-model', input: 'sensitive prompt' }, { signal: controller.signal });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  controller.abort();
+  await assert.rejects(pending, (error) => error instanceof ResponsesProviderError && error.code === 'provider_transport_error' && !/sensitive prompt|test-key/.test(error.message));
+  assert.equal(observedSignal.aborted, true);
+});
+
+test('the configured provider timeout also aborts an in-flight call', async () => {
+  let observedSignal;
+  const request = await createResponsesRequest({ apiKey: 'test-key', baseUrl: 'https://example.test/v1', timeoutMs: 1_000,
+    fetchImpl: async (_url, init) => {
+      observedSignal = init.signal;
+      return new Promise((_resolve, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true }));
+    } });
+  await assert.rejects(request({ model: 'test-model', input: 'sensitive prompt' }), (error) => error instanceof ResponsesProviderError && error.code === 'provider_transport_error');
+  assert.equal(observedSignal.aborted, true);
+});
+
 test('the adapter constructs requests in the deployed Workerd runtime without unsupported redirect modes', async () => {
   const adapterSource = await readFile(new URL('../../sites/family-therapist/src/server/openai-responses.mjs', import.meta.url), 'utf8');
   const workerSource = `

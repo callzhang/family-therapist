@@ -1,10 +1,11 @@
 import { env } from "cloudflare:workers";
 import { apiMemberContext } from "../../../../src/server/api-member-context";
 import { therapistRunConfig } from "../../../../src/server/therapist-config";
-import { createResponsesRequest } from "../../../../src/server/openai-responses.mjs";
+import { createResponsesRequest, ResponsesProviderError } from "../../../../src/server/openai-responses.mjs";
 import { runNextTherapistTask } from "../../../../src/server/therapist-worker.mjs";
 import { HttpError, routeError } from "../../../../src/server/member-context";
 import { isRequestBodyEmpty } from "../../../../src/server/request-body.mjs";
+import { createNdjsonWorkStream } from "../../../../src/server/ndjson-work-stream.mjs";
 
 export async function POST(request: Request): Promise<Response> {
   try {
@@ -16,15 +17,20 @@ export async function POST(request: Request): Promise<Response> {
         { status: 503, headers: { "Cache-Control": "private, no-store" } });
     }
     const providerRequest = await createResponsesRequest({ apiKey: env.THERAPIST_API_KEY, baseUrl: env.THERAPIST_API_BASE_URL });
-    const requestResponse = (payload: Record<string, unknown>) => providerRequest({ ...payload, reasoning: { effort: "medium" }, max_output_tokens: 8192 });
-    const result = await runNextTherapistTask({
-      db: context.db,
-      space_id: context.scope.space_id,
-      actor_id: context.scope.actor_id,
-      config,
-      request: requestResponse,
-    });
-    return Response.json(result, { status: 200, headers: { "Cache-Control": "private, no-store" } });
+    return createNdjsonWorkStream(async (signal) => {
+      const requestResponse = (payload: Record<string, unknown>) => {
+        try { signal.throwIfAborted(); }
+        catch { throw new ResponsesProviderError("Provider request could not be completed.", { code: "provider_transport_error" }); }
+        return providerRequest({ ...payload, reasoning: { effort: "medium" }, max_output_tokens: 8192 }, { signal });
+      };
+      return runNextTherapistTask({
+        db: context.db,
+        space_id: context.scope.space_id,
+        actor_id: context.scope.actor_id,
+        config,
+        request: requestResponse,
+      });
+    }, { requestSignal: request.signal });
   } catch (error) {
     if (error instanceof HttpError) return routeError(error);
     return Response.json({ status: "unavailable", code: "worker_unavailable", error: "咨询任务暂时无法处理。" },
