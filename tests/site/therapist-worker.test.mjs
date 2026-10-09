@@ -147,6 +147,7 @@ test('worker reads through scoped tools and atomically publishes one reply plus 
     assert.equal(result.status, 'completed', JSON.stringify(result));
     assert.match(initialInput, new RegExp(`${ids.expressionOne}.*${ids.one}.*husband.*${ids.one}.*husband.*${ids.two}.*wife`));
     const task = await db.prepare('SELECT status, reply_message_id, understanding_message_id, candidate_id, run_snapshot_seq FROM therapist_tasks WHERE message_id=?').bind(ids.expressionOne).first();
+    assert.match(initialInput, new RegExp(`Authoritative current consultation thread UUID: ${ids.thread}\\. Frozen message snapshot sequence: ${task.run_snapshot_seq}(?:\\D|$)`));
     assert.equal(task.status, 'completed');
     assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM messages WHERE kind=?').bind('therapist_reply').first()).n, 1);
     assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM messages WHERE kind=?').bind('understanding_updated').first()).n, 1);
