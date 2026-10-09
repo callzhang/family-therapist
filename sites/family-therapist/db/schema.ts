@@ -33,9 +33,26 @@ export const therapistTasks = sqliteTable('therapist_tasks', {
   messageSeq: integer('message_seq').notNull().references(() => messages.seq),
   spaceId: text('space_id').notNull(),
   threadId: text('thread_id').notNull(),
-  status: text('status', { enum: ['queued'] }).notNull(),
+  status: text('status', { enum: ['queued', 'running', 'failed', 'obsolete', 'completed'] }).notNull(),
   createdAt: text('created_at').notNull(),
-}, (table) => [check('therapist_tasks_status_check', sql`${table.status} = 'queued'`), index('therapist_tasks_status_created').on(table.status, table.createdAt)]);
+  inputThreadSeq: integer('input_thread_seq').notNull().default(0),
+  leaseId: text('lease_id'),
+  leaseExpiresAt: text('lease_expires_at'),
+  runSnapshotSeq: integer('run_snapshot_seq'),
+  runConfigJson: text('run_config_json'),
+  checkpointJson: text('checkpoint_json'),
+  replyMessageId: text('reply_message_id'),
+  understandingMessageId: text('understanding_message_id'),
+  candidateId: text('candidate_id'),
+  coveredBy: text('covered_by'),
+  lastErrorCode: text('last_error_code'),
+  lastErrorAt: text('last_error_at'),
+}, (table) => [
+  check('therapist_tasks_status_check', sql`${table.status} IN ('queued', 'running', 'failed', 'obsolete', 'completed')`),
+  check('therapist_tasks_input_thread_seq_check', sql`${table.inputThreadSeq} >= 0`),
+  index('therapist_tasks_status_created').on(table.status, table.createdAt),
+  uniqueIndex('therapist_tasks_one_running_per_thread').on(table.spaceId, table.threadId).where(sql`${table.status} = 'running'`),
+]);
 
 export const discussionProjection = sqliteTable('discussion_projection', {
   spaceId: text('space_id').notNull().primaryKey(),

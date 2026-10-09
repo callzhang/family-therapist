@@ -29,9 +29,16 @@ export async function GET(request: Request) {
     let messages: unknown[] = [];
     let hasEarlier = false;
     let understanding: unknown = null;
+    let therapistTask: unknown = null;
     if (selectedId) {
       selected = await context.execute("get_thread", { thread_id: selectedId }, context.scope);
       const thread = selected as { thread_id: string };
+      therapistTask = await context.db.prepare(`SELECT t.message_id, t.status, t.last_error_code, t.created_at
+        FROM therapist_tasks t INNER JOIN messages m ON m.message_id = t.message_id
+        WHERE t.space_id = ? AND t.thread_id = ? AND m.seq <= ?
+        ORDER BY m.seq DESC LIMIT 1`)
+        .bind(context.scope.space_id, thread.thread_id, context.scope.snapshot_seq)
+        .first<{ message_id: string; status: string; last_error_code: string | null; created_at: string }>();
       const tail = await context.db.prepare("SELECT message_id FROM messages WHERE space_id = ? AND thread_id = ? AND seq <= ? ORDER BY seq DESC LIMIT 1 OFFSET ?").bind(context.scope.space_id, thread.thread_id, context.scope.snapshot_seq, DISPLAY).first<{message_id:string}>();
       hasEarlier = Boolean(tail);
       const cursor = tail?.message_id;
@@ -45,6 +52,6 @@ export async function GET(request: Request) {
     }
     const membersResult = await context.db.prepare("SELECT user_id, role FROM members WHERE space_id = ? ORDER BY role").bind(context.scope.space_id).all();
     const members = (membersResult.results ?? []).map((r) => ({ user_id: (r as {user_id:string}).user_id, role: (r as {role:string}).role }));
-    return Response.json({ snapshot_seq: context.scope.snapshot_seq, refreshed_at: new Date().toISOString(), viewer_id: context.user.userId, role: context.role, members, threads, selected, messages, has_earlier: hasEarlier, understanding, agreements }, { headers: { "Cache-Control": "private, no-store" } });
+    return Response.json({ snapshot_seq: context.scope.snapshot_seq, refreshed_at: new Date().toISOString(), viewer_id: context.user.userId, role: context.role, members, threads, selected, messages, has_earlier: hasEarlier, understanding, therapist_task: therapistTask, agreements }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) { return routeError(error); }
 }

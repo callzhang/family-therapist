@@ -5,7 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 type Thread = { thread_id: string; title: string; status: "pending" | "active" | "settled"; summary: string };
 type Message = { message_id: string; kind: string; actor_id: string; body: unknown; created_at: string };
 type Agreement = { agreement_id: string; thread_id: string | null; version: number; text: string };
-type ViewData = { threads: Thread[]; selected: Thread | null; messages: Message[]; has_earlier: boolean; understanding: unknown; agreements: Agreement[]; refreshed_at: string; role: string; viewer_id: string; members: { user_id: string; role: string }[]; snapshot_seq: number };
+type TherapistTask = { message_id: string; status: "queued" | "running" | "failed" | "obsolete" | "completed"; last_error_code: string | null; created_at: string } | null;
+type ViewData = { threads: Thread[]; selected: Thread | null; messages: Message[]; has_earlier: boolean; understanding: unknown; therapist_task: TherapistTask; agreements: Agreement[]; refreshed_at: string; role: string; viewer_id: string; members: { user_id: string; role: string }[]; snapshot_seq: number };
 type ViewError = { code?: string; error?: string };
 
 function bodyText(value: unknown): string | null {
@@ -30,6 +31,14 @@ function roleName(role: string | undefined) {
 }
 function date(value: string) { return new Date(value).toLocaleDateString("zh-CN", { month: "long", day: "numeric" }); }
 function statusName(status: string) { return status === "settled" ? "已结束" : status === "pending" ? "待讨论" : "进行中"; }
+function therapistTaskMessage(status: NonNullable<TherapistTask>["status"] | undefined) {
+  if (status === "queued") return "表达已保存，等待咨询处理。";
+  if (status === "running") return "咨询正在处理这次表达。";
+  if (status === "failed") return "这次咨询未能完成，尚未发布回复。";
+  if (status === "obsolete") return "议题或共同原则已变化，本次没有发布回复。";
+  if (status === "completed") return "这次咨询已完成。";
+  return null;
+}
 
 export function RelationshipView() {
   const [data, setData] = useState<ViewData | null>(null);
@@ -114,6 +123,7 @@ export function RelationshipView() {
   const selected = data?.selected ?? null;
   const agreements = data?.agreements ?? [];
   const understanding = data?.understanding as Record<string, unknown> | null;
+  const taskMessage = therapistTaskMessage(data?.therapist_task?.status);
   const groups = useMemo(() => [
     { key: "common_points", title: "你们的共同点" },
     { key: "differences", title: "仍有不同的感受" },
@@ -153,6 +163,7 @@ export function RelationshipView() {
         </> : section === "archives" ? <><p className="text-xs font-medium uppercase tracking-[.15em] text-[#90968b]">所有议题</p><h1 className="mt-2 font-serif text-3xl text-[#34423a] md:text-4xl">对话与记录</h1><p className="mt-3 text-sm leading-6 text-[#768076]">查看各议题状态，打开对话可阅读内容。历史浏览不会改变议题状态。</p><div className="mt-8 space-y-3">{threads.map((item) => <article key={item.thread_id} className="rounded-2xl border border-[#e7e7dd] bg-white p-5"><button className="text-left" onClick={() => chooseThread(item.thread_id, true)}><span className="block font-serif text-xl">{item.title}</span><span className="mt-1 block text-xs text-[#838b80]">{statusName(item.status)} · {item.summary}</span></button><div className="mt-4 flex flex-wrap gap-2"><a className="rounded-full bg-[#edf1e9] px-3 py-2 text-xs font-medium text-[#536b54]" href={`/api/archives/${encodeURIComponent(item.thread_id)}?format=md`}>下载 Markdown</a><a className="rounded-full border border-[#e5e6dd] px-3 py-2 text-xs text-[#697368]" href={`/api/archives/${encodeURIComponent(item.thread_id)}?format=jsonl`}>下载 JSONL</a></div></article>)}{!threads.length && <Empty />}</div></> : <>
           <p className="text-xs font-medium uppercase tracking-[.15em] text-[#90968b]">{selected?.status === "settled" ? "已结束 · 仅供查阅" : "共同探索中"}</p><h1 className="mt-2 font-serif text-3xl leading-tight text-[#34423a] md:text-4xl">{selected?.title ?? "为彼此留出理解的空间"}</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-[#768076]">{selected?.summary ?? "在这里阅读已经分享的表达，也留意正在逐渐清晰的部分。"}</p>
           <div className="mt-7 flex items-center justify-between border-b border-[#e5e5dc] pb-3"><span className="text-xs text-[#838a80]">{selected ? statusName(selected.status) : "等待第一次对话"}</span><span className="text-[11px] text-[#999e95]">{data?.refreshed_at ? `更新于 ${date(data.refreshed_at)}` : ""}</span></div>{selected?.status === "settled" && <p className="mt-3 rounded-xl bg-[#edf0e9] px-4 py-3 text-xs leading-5 text-[#687667]">本议题已结束，这里仅供回顾当时的记录。浏览不会改变状态；如需重开，须双方共同同意。</p>}
+          {taskMessage && <p role="status" className="mt-4 rounded-xl border border-[#e2e6dc] bg-white/80 px-4 py-3 text-xs leading-5 text-[#687667]">最近一次已确认表达：{taskMessage}</p>}
           {data?.has_earlier && <div className="my-4 rounded-lg bg-[#ecefe8] px-4 py-3 text-xs text-[#687667]">更早的表达未在此页展开，可下载完整对话记录。<span className="mt-2 flex gap-3"><a className="underline" href={`/api/archives/${encodeURIComponent(selected!.thread_id)}?format=md`}>下载 Markdown</a><a className="underline" href={`/api/archives/${encodeURIComponent(selected!.thread_id)}?format=jsonl`}>下载 JSONL</a></span></div>}
           <div className="space-y-5 py-5">{data?.messages.filter((message) => message.kind === "member_expression" || message.kind === "therapist_reply").map((message) => { const content = bodyText(message.body); const memberExpression = message.kind === "member_expression"; const speaker = memberExpression ? (message.actor_id === data.viewer_id ? "你" : roleName(data.members.find((person) => person.user_id === message.actor_id)?.role)) : "咨询师回复"; return <article id={message.message_id} key={message.message_id} className={`rounded-2xl border p-5 md:p-6 ${memberExpression ? "border-[#e7e3d8] bg-white" : "border-[#e0e8de] bg-[#f0f4ed]"}`}><div className="mb-3 flex items-center justify-between"><span className="text-[11px] font-semibold uppercase tracking-[.12em] text-[#758174]">{speaker}</span><time className="text-[11px] text-[#a0a49c]">{date(message.created_at)}</time></div>{content !== null ? <p className="whitespace-pre-wrap break-words font-serif text-[16px] leading-7 text-[#3a443d]">{content}</p> : <div className="rounded-xl bg-[#f4f2ec] p-4 text-sm leading-6 text-[#697368]">这条表达的正文格式暂不支持在网页中展开。可下载 JSONL 档案查看完整原始记录。<a className="ml-1 underline" href={`/api/archives/${encodeURIComponent(selected!.thread_id)}?format=jsonl`}>下载 JSONL</a></div>}</article>; })}{!data?.messages.some((message) => message.kind === "member_expression" || message.kind === "therapist_reply") && <Empty />}</div>
         </>}
