@@ -289,6 +289,37 @@ test('expired lease recovery keeps the frozen run ID and stale owner cannot save
   } finally { db.close(); }
 });
 
+test('default worker clock extends the lease from the time of each checkpoint', async () => {
+  const db = await database();
+  try {
+    let initialExpiry;
+    const result = await runNextTherapistTask({ db, space_id: space, actor_id: ids.one, config, lease_ms: 1_000,
+      request: provider({ onCall: async (_payload, index) => {
+        if (index === 0) {
+          initialExpiry = Date.parse((await db.prepare('SELECT lease_expires_at FROM therapist_tasks WHERE message_id=?').bind(ids.expressionOne).first()).lease_expires_at);
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        if (index === 1) {
+          const expiry = Date.parse((await db.prepare('SELECT lease_expires_at FROM therapist_tasks WHERE message_id=?').bind(ids.expressionOne).first()).lease_expires_at);
+          assert.ok(expiry > initialExpiry, `checkpoint did not extend lease beyond ${new Date(initialExpiry).toISOString()}`);
+        }
+      } }) });
+    assert.equal(result.status, 'completed', JSON.stringify(result));
+  } finally { db.close(); }
+});
+
+test('default worker clock refuses to checkpoint or publish after a provider call outlasts its lease', async () => {
+  const db = await database();
+  try {
+    const result = await runNextTherapistTask({ db, space_id: space, actor_id: ids.one, config, lease_ms: 1_000,
+      request: provider({ onCall: async (_payload, index) => { if (index === 0) await new Promise((resolve) => setTimeout(resolve, 1_200)); } }) });
+    assert.equal(result.status, 'failed');
+    assert.equal(result.error_code, 'worker_lease_lost');
+    assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM messages WHERE kind IN ('therapist_reply','understanding_updated')").first()).n, 0);
+    assert.equal((await db.prepare('SELECT status FROM therapist_tasks WHERE message_id=?').bind(ids.expressionOne).first()).status, 'running');
+  } finally { db.close(); }
+});
+
 test('expired stale job is obsoleted before a resumed provider call when principles changed', async () => {
   const db = await database();
   try {
