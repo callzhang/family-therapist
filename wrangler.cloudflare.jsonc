@@ -1,0 +1,34 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "family-therapist",
+  "main": "sites/family-therapist/dist/server/index.js",
+  "compatibility_date": "2026-10-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "sites/family-therapist/dist/client",
+    "binding": "ASSETS"
+  },
+  "vars": {
+    "THERAPIST_MODEL": "gpt-6.1-sol",
+    "THERAPIST_API_BASE_URL": "https://api.openai.com/v1"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "YOUR_D1_DATABASE_NAME",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "sites/family-therapist/drizzle"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "YOUR_R2_BUCKET_NAME"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}
