@@ -36,7 +36,7 @@ function therapistTaskMessage(status: NonNullable<TherapistTask>["status"] | und
   if (status === "running") return "咨询正在处理这次表达。";
   if (status === "failed") return "这次咨询未能完成，尚未发布回复。";
   if (status === "obsolete") return "议题或共同原则已变化，本次没有发布回复。";
-  if (status === "completed") return "这次咨询已完成。";
+  if (status === "completed") return "AI 咨询师已完成本轮回复。";
   return null;
 }
 
