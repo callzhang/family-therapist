@@ -16,8 +16,8 @@ function speaker(actorId, rolesByActor) {
 
 function agreementKind(item) { return item.thread_id === null ? '共同相处原则' : '议题结论'; }
 
-function agreementMarkdown(item) {
-  return `### ${agreementKind(item)}\n\n${item.text}\n\n- Agreement UUID：${item.agreement_id}\n- 确认记录 UUID：${item.confirmation_message_id}\n- 版本：${item.version}\n- 确认序号：${item.message_seq}\n- 确认者：${item.confirmed_by}\n- 确认时间：${item.confirmed_at}\n\n`;
+function agreementMarkdown(item, rolesByActor) {
+  return `### ${agreementKind(item)}\n\n${item.text}\n\n- Agreement UUID：${item.agreement_id}\n- 确认记录 UUID：${item.confirmation_message_id}\n- 版本：${item.version}\n- 确认序号：${item.message_seq}\n- 最后确认记录提交者：${speaker(item.confirmation_actor_id, rolesByActor)}\n- 操作者 ID：${item.confirmation_actor_id}\n- 确认时间：${item.confirmed_at}\n\n`;
 }
 
 function operationMarkdown(item, rolesByActor) {
@@ -46,7 +46,7 @@ export function createAgreementArchiveStream({ format, scope, snapshot, cutoff_m
         for (const item of page.items) {
           if (item.message_seq > snapshot || !item.confirmation_message_id || typeof item.text !== 'string' || (category === 'principle') !== (item.thread_id === null)) throw new Error('Malformed confirmed agreement record');
           if (format === 'jsonl') yield encoder.encode(`${JSON.stringify({ type: 'agreement', ...item })}\n`);
-          else yield encoder.encode(agreementMarkdown(item));
+          else yield encoder.encode(agreementMarkdown(item, rolesByActor));
         }
         if (!page.has_more) break;
         cursor = page.next_after_id;
@@ -76,6 +76,11 @@ export function createAgreementArchiveStream({ format, scope, snapshot, cutoff_m
     },
     async cancel() { await iterator.return(); },
   });
+}
+
+export function filterAgreementPage(page, category) {
+  if (!page || !Array.isArray(page.items)) throw new Error('Invalid agreement page');
+  return { ...page, items: page.items.filter((item) => category === 'principle' ? item.thread_id === null : item.thread_id !== null) };
 }
 
 export async function saveAgreementArchive({ streamOptions, key, bucket, createFixedLengthStream, measureReadableBytes, putKnownLengthStream }) {
