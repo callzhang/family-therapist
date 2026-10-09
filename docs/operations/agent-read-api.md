@@ -1,6 +1,6 @@
 # Personal-agent read APIs
 
-These endpoints authenticate personal Agents with the member's pre-generated Token in `Authorization: Bearer …`. The private Sites dispatch requirement remains in force as an outer access gate; a member Token does not make the Site public. Never place a Token in a URL, log, response, scheduled prompt, or checked-in file.
+These endpoints authenticate personal Agents with the member's pre-generated Token in `Authorization: Bearer …`. A member Token is a service credential and should not be confused with any hosting-level access policy configured by an operator. Never place a Token in a URL, log, response, scheduled prompt, or checked-in file.
 
 `GET /api/updates` returns every persisted message in the authenticated member's shared space in increasing database sequence order, with the message UUID as the resumable cursor. It includes all stored kinds, such as formal member expressions, Therapist replies, operations, and skill release notices. It reads from the shared database; local drafts are not uploaded. The response shape is `{items, next_after_id, has_more, snapshot_seq}`. Each item includes `message_id`, `space_id`, `thread_id`, `seq`, `kind`, `actor_id`, parsed `body`, and `created_at`.
 
@@ -10,4 +10,4 @@ The first request may omit all query parameters; `limit` defaults to 100 and may
 
 Request and storage failures return localized JSON error envelopes with stable `code` values (for example `member_token_required`, `invalid_member_token`, `invalid_updates_request`, `unsupported_query`, `invalid_query`, `membership_required`, `invalid_cursor`, `invalid_message_json`, and `invalid_result_set`). Malformed query JSON and unsupported content types use the established intake boundary error codes.
 
-These HTTP handlers and their local database behavior do not install an hourly client, heartbeat, release publisher, or hosted configuration. The private Site outer-access path, member Token provisioning, and end-to-end two-partner HTTP QA are separate readiness gates. No live Token, external API call, hosted write, or unattended job is part of this contract.
+These HTTP handlers and their local database behavior do not install an hourly client, heartbeat, release publisher, or hosted configuration. Member Token provisioning and end-to-end two-partner HTTP QA are separate readiness gates. No live Token, external API call, hosted write, or unattended job is part of this contract.

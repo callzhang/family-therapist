@@ -7,12 +7,12 @@ import { createResponsesRequest, ResponsesProviderError } from '../../sites/fami
 test('Responses adapter uses a configured HTTPS endpoint, honest User-Agent, and never puts API key in payload', async () => {
   const secret = 'secret-test-key';
   let observed;
-  const request = await createResponsesRequest({ apiKey: secret, baseUrl: 'https://llm-api.preseen.ai/v1', fetchImpl: async (url, init) => {
+  const request = await createResponsesRequest({ apiKey: secret, baseUrl: 'https://provider.example/v1', fetchImpl: async (url, init) => {
     observed = { url, init };
     return new Response(JSON.stringify({ id: 'resp_test', status: 'completed', output: [] }), { status: 200 });
   } });
   const result = await request({ model: 'test-model', input: 'hello' });
-  assert.equal(observed.url, 'https://llm-api.preseen.ai/v1/responses');
+  assert.equal(observed.url, 'https://provider.example/v1/responses');
   assert.equal(observed.init.redirect, 'manual');
   assert.equal(observed.init.headers.authorization, `Bearer ${secret}`);
   assert.equal(observed.init.headers['user-agent'], 'FamilyTherapist/1.0');

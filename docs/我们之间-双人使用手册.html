@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>「我们之间」双人使用手册</title>
+  <style>
+    :root { color-scheme: light; --ink: #263342; --muted: #657386; --line: #dce4ea; --accent: #337d74; --paper: #fff; --wash: #f2f6f5; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--wash); color: var(--ink); font: 17px/1.78 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    main { width: min(820px, calc(100% - 32px)); margin: 40px auto; padding: clamp(24px, 6vw, 64px); background: var(--paper); border: 1px solid var(--line); border-radius: 20px; box-shadow: 0 14px 48px #193b3510; }
+    h1, h2 { line-height: 1.35; color: #1d3e3a; }
+    h1 { margin: 0 0 6px; font-size: clamp(30px, 6vw, 42px); letter-spacing: .02em; }
+    h2 { margin: 38px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-size: 23px; }
+    p { margin: 12px 0; }
+    a { color: var(--accent); overflow-wrap: anywhere; }
+    .date, .note { color: var(--muted); font-size: 14px; }
+    .note { padding: 14px 18px; border-left: 4px solid var(--accent); background: #eff7f5; border-radius: 4px 10px 10px 4px; }
+    .download { display: inline-block; margin: 8px 0; padding: 12px 18px; border-radius: 999px; background: var(--accent); color: white; text-decoration: none; font-weight: 650; }
+    strong { color: #213d39; }
+    footer { margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+    @media print { body { background: white; } main { width: auto; margin: 0; border: 0; box-shadow: none; } a { color: inherit; } .download { display: none; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>「我们之间」</h1>
+  <p><strong>双人使用手册</strong></p>
+  <p class="date">更新日期：2026 年 10 月 9 日</p>
+
+  <h2>访问网站</h2>
+  <p>网站地址请向部署管理员获取。</p>
+  <p>网站使用 Cloudflare Workers 托管。进入网站需要输入各自单独的成员链接码；ChatGPT 登录账号不会代替链接码。丈夫和妻子各用自己的码，不能互换。链接码是私密凭证，请通过双方认可的私密方式分别交给本人，不要放进聊天截图、公开文档、URL 或共享 Skill。</p>
+  <p>链接码分别保存在部署管理员设备上的私密目录 <code>.local-members/partner-husband.json</code> 和 <code>.local-members/partner-wife.json</code>。这两个文件不应发布或写入本手册。若文件不可用，应由管理员从安全渠道重新配置或轮换，不要把旧码复制进手册。</p>
+  <p>首次进入网站时，在成员连接框输入自己的链接码。浏览器只在当前会话中保存登录状态；退出网站或关闭会话后可能需要重新输入。另一位伴侣仍需通过自己的成员码进入。Cloudflare Workers 地址本身没有 ChatGPT 账号白名单；若将来增加 Cloudflare Access 等外层访问控制，还需把双方加入该访问范围。</p>
+
+  <h2>本地 Skill 与云端 Therapist 如何配合</h2>
+  <p>每个人在自己的 Codex 中安装「本地 Therapist Assistant」Skill。它先私下倾听，帮助本人梳理观察、理解、感受和希望讨论的问题，再协助写出完整表达。草稿和本地私聊不会因为安装 Skill 自动上传。</p>
+  <p>准备提交时，本地 Agent 必须展示完整原文、说明另一方也会看到，并取得本人对这个准确版本的明确确认。确认后正式内容才进入双方共同空间。云端 AI Therapist 读取双方正式表达并给出共同回复；正式表达和 Therapist 回复对双方可见。</p>
+  <p>一次只处理一个当前议题。网站侧栏显示当前话题的自动共识摘要；它是可修正的归纳，不等于双方正式认可。只有双方明确认可同一准确结论，才能记为正式共识。已经 settled 的议题之后只引用共同结论，不重新争论；若要重开，必须双方同意同一个重开请求。后来发生的履约问题作为新的独立议题讨论。</p>
+  <p>每条正式消息带有 UUID。客户端可按上次 UUID 增量同步，也可全量获取历史；正式记录以文件保存在各自的本地同步目录。私人草稿不应放进同步目录。</p>
+
+  <h2>用一句话请求安装 Skill</h2>
+  <p>在 Codex 或支持 Skills 的 ChatGPT 中，复制并发送下面这句话：</p>
+  <p class="note">请从我有权限访问的 GitHub 仓库 <code>callzhang/family-therapist</code> 读取 <code>skills/local-therapist-assistant</code>，将它安装为当前环境可复用的 Skill；安装后核对 <code>SKILL.md</code>、<code>references/method.md</code> 和 <code>references/initialization.md</code> 均已就位，如果 Skills 功能或安装工具不可用，请说明缺少的条件并停止，不要只在本次对话中遵循，也不要声称已安装。</p>
+  <p>安装者需要能访问该 GitHub 仓库。ChatGPT 只有在账号/工作区已提供 Skills 功能时，才能通过 Skills 界面创建或安装可复用 Skill；ChatGPT 里的 Skill 安装也不会自动安装到本机 Codex。详情见 <a href="https://help.openai.com/en/articles/20001066-skills-in-chatgpt">OpenAI 的 ChatGPT Skills 说明</a>。</p>
+  <p>即使 Skill 已安装，也只代表本地沟通规则可复用。它不会自动连上网站、启用每小时同步或 heartbeat，也不会替用户发送消息；这些能力仍需在各自的 Codex 上配置并验证本地客户端和私密连接。</p>
+
+  <h2>隐私、费用与边界</h2>
+  <p>本地 Agent 负责私下整理和本人确认；云端只处理正式提交的共同空间内容。不要提交希望永久保密、不愿让伴侣或 Therapist 看见的信息。</p>
+  <p>AI Therapist 是 AI 服务，不是真实持牌心理治疗师，也不能替代专业诊断、医疗建议或紧急危机服务。若存在现实人身危险，请优先联系当地紧急服务或可信任的专业人士。</p>
+  <p>打开网站本身不按访问次数收费。Cloudflare Workers、D1 和 R2 有免费额度；若 Cloudflare 账号使用付费套餐，可能产生账号级费用。每次云端 Therapist 模型调用会产生模型 API 用量费用，主要随输入上下文和输出 token 数变化。实际账单需以对应服务商账户用量页面为准；本手册不包含 API 密钥或余额信息。</p>
+
+  <h2>联系与排错</h2>
+  <p>网站打不开：向部署管理员确认当前地址并检查网络。链接码无效：确认使用了自己对应的码；不要把码发到公开群或提交到 GitHub。Codex 没识别 Skill：确认安装路径中有 <code>local-therapist-assistant/SKILL.md</code>，然后重新打开 Codex 或开始新对话。Skill 已安装但不能同步：这是预期的分层行为，Skill 安装不会自动配置私密 API 客户端；需要管理员为该成员配置本地连接和客户端。</p>
+
+  <footer>把链接码与本地对话当作私密信息妥善保管。此手册不包含任何认证凭证。</footer>
+</main>
+</body>
+</html>

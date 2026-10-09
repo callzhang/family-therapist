@@ -17,15 +17,15 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "family-therapist-db",
-      "database_id": "a38912cd-f457-4b9f-b49d-c04b2ab3b442",
+      "database_name": "REPLACE_WITH_YOUR_D1_DATABASE_NAME",
+      "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "sites/family-therapist/drizzle"
     }
   ],
   "r2_buckets": [
     {
       "binding": "BUCKET",
-      "bucket_name": "family-therapist-archives"
+      "bucket_name": "REPLACE_WITH_YOUR_R2_BUCKET_NAME"
     }
   ],
   "observability": {
