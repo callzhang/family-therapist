@@ -4,18 +4,12 @@ This project can run independently of ChatGPT Sites on Cloudflare Workers. The
 production Worker configuration is `wrangler.cloudflare.jsonc`; the app remains
 built with the existing Vinext/Cloudflare adapter.
 
-## Current deployment
+## Configure your deployment
 
-- Worker: `family-therapist`
-- URL: `https://YOUR_WORKER.YOUR_ACCOUNT.workers.dev`
-- D1: `YOUR_D1_DATABASE_NAME`
-- R2: `YOUR_R2_BUCKET_NAME`
-- Model: `gpt-6.1-sol` through the OpenAI Responses API
-
-The D1 database was initialized with the current Drizzle migrations and the two
-member identities. The message, task, thread, and agreement tables are empty;
-the prior ChatGPT Site history was not copied. R2 is reserved for archives
-exported by the app.
+Create a Worker, D1 database, and R2 bucket in your own Cloudflare account.
+Replace the D1 and R2 placeholders in `wrangler.cloudflare.jsonc` with your
+resource names and D1 UUID. Configure the model and trusted Responses API base
+URL for your provider.
 
 ## Build and deploy
 
@@ -26,9 +20,8 @@ node scripts/build-site-root.mjs
 wrangler deploy --config wrangler.cloudflare.jsonc
 ```
 
-The `workers.dev` URL remains the same across Worker deployments while the
-Worker name, account, and route are retained. Deleting the Worker or losing the
-Cloudflare account can make the URL unavailable.
+Cloudflare assigns the `workers.dev` address using your account and Worker
+name. The deployment address is specific to your account.
 
 ## Runtime secrets and membership
 
@@ -39,6 +32,6 @@ files into source control or logs. The site itself is protected by the two
 individual member codes; API reads and writes reject requests without a valid
 member identity.
 
-The old ChatGPT Sites URL and its data remain separate. Local Agent clients
-must be configured with the Worker URL and the matching member file before
-using the new blank space.
+Configure each local client with your deployment's URL and the matching member
+credential before use. Keep production URLs out of public source files when
+they identify a private deployment.
