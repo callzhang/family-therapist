@@ -23,9 +23,8 @@ export function validateToolArguments(name, value) {
   if (!tool) throw new Error(`Unsupported tool: ${name}`);
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${name} arguments must be an object`);
   const allowed = tool.parameters.properties;
-  const identityKeys = new Set(['actor_id', 'space_id', 'snapshot_seq']);
-  for (const key of Object.keys(value)) if (!(key in allowed) && !identityKeys.has(key)) throw new Error(`${name} arguments contain unsupported property: ${key}`);
-  for (const key of tool.parameters.required) if (!(key in value)) throw new Error(`${name} arguments missing required property: ${key}`);
+  for (const key of Object.keys(value)) if (!Object.hasOwn(allowed, key)) throw new Error(`${name} arguments contain unsupported property: ${key}`);
+  for (const key of tool.parameters.required) if (!Object.hasOwn(value, key)) throw new Error(`${name} arguments missing required property: ${key}`);
   for (const [key, schema] of Object.entries(allowed)) {
     const item = value[key];
     if (item === null && schema.type.includes?.('null')) continue;
@@ -37,5 +36,5 @@ export function validateToolArguments(name, value) {
     if (schema.maximum && item !== null && item > schema.maximum) throw new Error(`${name} ${key} must be at most ${schema.maximum}`);
     if (schema.enum && !schema.enum.includes(item)) throw new Error(`${name} ${key} has an unsupported value`);
   }
-  return Object.fromEntries(Object.entries(value).filter(([key]) => !(key === 'actor_id' || key === 'space_id' || key === 'snapshot_seq')));
+  return { ...value };
 }
