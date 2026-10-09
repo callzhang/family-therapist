@@ -48,6 +48,10 @@ Local tool usage metrics are disabled by default. Set `WRANGLER_SEND_METRICS=tru
 - `examples/d1/` contains an optional D1 example surface
 - `drizzle.config.ts` supports local migration generation when needed
 
+## Confirmed Expression Intake
+
+`POST /api/messages` stores the authenticated member's exact confirmed expression and one durable `queued` Therapist task atomically; `GET /api/messages/{messageId}` reads that member's own receipt. A queued receipt proves persistence only, not Therapist execution or a reply. See [`docs/operations/expression-intake.md`](../../docs/operations/expression-intake.md) for the request and verification boundary.
+
 ## Workspace Auth Headers
 
 Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
