@@ -24,7 +24,7 @@ test('provisioning creates two private member configs and hash-only seed SQL, th
     assert.equal((await stat(filepath)).mode & 0o777, 0o600);
     return JSON.parse(await readFile(filepath, 'utf8'));
   }));
-  assert.deepEqual(configs.map(({ actor_id, role }) => [actor_id, role]), [['partner-husband', 'member'], ['partner-wife', 'member']]);
+  assert.deepEqual(configs.map(({ actor_id, role }) => [actor_id, role]), [['partner-husband', 'husband'], ['partner-wife', 'wife']]);
   assert.equal(configs[0].space_id, configs[1].space_id);
   assert.notEqual(configs[0].member_token, configs[1].member_token);
   assert.ok(configs.every(({ member_token }) => /^[A-Za-z0-9_-]{43}$/.test(member_token)));
@@ -58,4 +58,22 @@ test('provisioning refuses private-directory permission drift', async (t) => {
   const first = await provisionMemberTokens({ rootDir });
   await chmod(first.directory, 0o755);
   await assert.rejects(provisionMemberTokens({ rootDir }), /unsafe local member directory/);
+});
+
+test('provisioning refuses role remapping and SQL-shaped space ids in existing configurations', async (t) => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'member-token-invalid-state-'));
+  t.after(async () => { const { rm } = await import('node:fs/promises'); await rm(rootDir, { recursive: true, force: true }); });
+  const result = await provisionMemberTokens({ rootDir });
+  const husbandPath = path.join(result.directory, 'partner-husband.json');
+  const wifePath = path.join(result.directory, 'partner-wife.json');
+  const husband = JSON.parse(await readFile(husbandPath, 'utf8'));
+  const wife = JSON.parse(await readFile(wifePath, 'utf8'));
+
+  await writeFile(husbandPath, `${JSON.stringify({ ...husband, role: 'wife' }, null, 2)}\n`, { mode: 0o600 });
+  await assert.rejects(provisionMemberTokens({ rootDir }), /inconsistent/);
+
+  const sqlShapedSpaceId = "x'); DELETE FROM members; --";
+  await writeFile(husbandPath, `${JSON.stringify({ ...husband, role: 'husband', space_id: sqlShapedSpaceId }, null, 2)}\n`, { mode: 0o600 });
+  await writeFile(wifePath, `${JSON.stringify({ ...wife, space_id: sqlShapedSpaceId }, null, 2)}\n`, { mode: 0o600 });
+  await assert.rejects(provisionMemberTokens({ rootDir }), /inconsistent/);
 });

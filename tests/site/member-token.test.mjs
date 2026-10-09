@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import test from 'node:test';
 import { authenticateMemberToken, MemberTokenError } from '../../sites/family-therapist/src/server/member-token.mjs';
+import { snapshotSequence } from '../../sites/family-therapist/src/server/snapshot-sequence.mjs';
 
 const migrationDir = path.resolve('sites/family-therapist/drizzle');
 
@@ -31,7 +32,7 @@ const bearerRequest = (value) => new Request('https://example.test/api/messages'
 async function setup() {
   const db = new D1Sqlite();
   await db.migrate();
-  actors.forEach((actor) => db.run('INSERT INTO members(space_id,user_id,role) VALUES(?,?,?)', spaceId, actor, 'member'));
+  actors.forEach((actor, index) => db.run('INSERT INTO members(space_id,user_id,role) VALUES(?,?,?)', spaceId, actor, index === 0 ? 'husband' : 'wife'));
   actors.forEach((actor, index) => db.run('INSERT INTO member_tokens(token_sha256,space_id,user_id) VALUES(?,?,?)', tokenHash(tokens[index]), spaceId, actor));
   return db;
 }
@@ -39,8 +40,8 @@ async function setup() {
 test('the actual generated migrations bind each distinct member token to its own current actor', async () => {
   const db = await setup();
   try {
-    assert.deepEqual(await authenticateMemberToken({ db, request: bearerRequest(`Bearer ${tokens[0]}`) }), { space_id: spaceId, actor_id: actors[0], role: 'member' });
-    assert.deepEqual(await authenticateMemberToken({ db, request: bearerRequest(`Bearer ${tokens[1]}`) }), { space_id: spaceId, actor_id: actors[1], role: 'member' });
+    assert.deepEqual(await authenticateMemberToken({ db, request: bearerRequest(`Bearer ${tokens[0]}`) }), { space_id: spaceId, actor_id: actors[0], role: 'husband' });
+    assert.deepEqual(await authenticateMemberToken({ db, request: bearerRequest(`Bearer ${tokens[1]}`) }), { space_id: spaceId, actor_id: actors[1], role: 'wife' });
   } finally { db.close(); }
 });
 
@@ -78,4 +79,12 @@ test('visitor identity and request body fields cannot select an authenticated ac
     const authenticated = new Request('https://example.test/api/messages', { method: 'POST', headers: { authorization: `Bearer ${tokens[0]}`, 'content-type': 'application/json' }, body: JSON.stringify({ actor_id: actors[1] }) });
     assert.equal((await authenticateMemberToken({ db, request: authenticated })).actor_id, actors[0]);
   } finally { db.close(); }
+});
+
+test('snapshot sequence accepts only nonnegative safe integers', () => {
+  assert.equal(snapshotSequence({ snapshot_seq: 0 }), 0);
+  assert.equal(snapshotSequence({ snapshot_seq: 12 }), 12);
+  for (const snapshot of [null, {}, { snapshot_seq: -1 }, { snapshot_seq: 1.5 }, { snapshot_seq: NaN }, { snapshot_seq: Infinity }, { snapshot_seq: '12' }]) {
+    assert.equal(snapshotSequence(snapshot), null);
+  }
 });
