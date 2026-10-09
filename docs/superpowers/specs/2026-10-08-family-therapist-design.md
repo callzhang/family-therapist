@@ -34,7 +34,7 @@ AI 必须明确身份。“20 年经验”代表对成熟沟通和知识深度�
 
 ### 3.0 执行方式：Responses API 与 Sites 工具
 
-derek 已选择第一版使用 OpenAI Responses API，不采用云端 Codex CLI。Sites 后端提供业务 API，并将查询能力注册为模型可调用的 function tools。模型按 Therapist Skill 判断何时调用工具；Sites 后端执行查询，将结果作为 function_call_output 按 call_id 交回模型，继续直到产生正式回复或达到运行限制。
+Derek 已选择第一版使用 Responses API，不采用云端 Codex CLI。2026-10-09，Derek 要求使用既有 Qwen3.8 Provider 继续验证直至跑通，并提供公网入口 `https://llm-api.preseen.ai/v1`；服务端以明确的 Provider 配置调用同一 Responses 协议。Sites 后端提供业务 API，并将查询能力注册为模型可调用的 function tools。模型按 Therapist Skill 判断何时调用工具；Sites 后端执行查询，将结果作为 function_call_output 按 call_id 交回模型，继续直到资料查询完成或达到运行限制。
 
 Skill 定义咨询方法、工具的用途、使用条件和边界；工具名称、参数 JSON Schema 与执行器必须在后端真实注册。仅在 SKILL.md 描述接口不会自动创建可调用工具。第一版不为自己的 Sites 服务引入额外 MCP 服务：HTTP API 与模型工具处理器复用同一业务函数，后台无需绕经公开 URL 调用自身。
 
@@ -50,7 +50,7 @@ Skill 定义咨询方法、工具的用途、使用条件和边界；工具名�
 
 成员与空间范围由运行任务绑定，不能由模型提供任意 actor 或 space_id。查询必须限制在本轮输入快照内，避免模型第一次读取和第二次读取看到不一致的咨询阶段。已 settled 议题的 Therapist 查询默认仅提供结论与引用信息，原始争论须在双方批准重开后才能进入新的咨询上下文；这不限制双方本人通过档案 API 查看旧记录。
 
-模型的最终结构化输出包含回复、带来源的共同点、差异、探索假设及可选共识提案，由后端在版本检查后保存。不给模型双方确认、强制 settled、批准重开或直接修改正式记录的工具。
+模型的最终结构化输出包含回复、带来源的共同点、差异、探索假设及可选共识提案，由后端在版本检查后保存。查询阶段结束后，运行时进入单独持久化的最终生成阶段：不再提供工具，使用严格输出 schema，并只解析 assistant 消息中的结果文本。查询阶段的草拟文本和模型推理不作为正式回复发布。不给模型双方确认、强制 settled、批准重开或直接修改正式记录的工具。
 
 每轮固定 Therapist Skill 版本，将其必要指令随调用链持续提供，不假定上一轮模型状态自动保留全部指令。应用保存工具调用标识、结果、模型 response ID 和任务进度，用于恢复与审计；应用消息 UUID、业务 thread_id 与供应商 response/conversation ID 分别存储，不相互替代。工具次数、单次返回条数及本轮资源预算有上限；达到上限时明确记录未完成，不伪造最终成功回复。
 
