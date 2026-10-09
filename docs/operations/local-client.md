@@ -4,13 +4,15 @@
 
 ## Private configuration
 
-Each local Agent uses its own pre-generated member credential file from `.local-members/partner-husband.json` or `.local-members/partner-wife.json`. ChatGPT or Codex sign-in is not API authentication; the credential identifies the API member. Keep each file mode `0600` inside a mode `0700` directory. The optional `.local-members/connection.local.json` has exactly this shape:
+Each local Agent uses its own pre-generated member credential file from `.local-members/partner-husband.json` or `.local-members/partner-wife.json`. ChatGPT or Codex sign-in is not application member authentication; the credential identifies the API member. Keep each file mode `0600` inside a mode `0700` directory. The optional `.local-members/connection.local.json` has exactly this shape:
 
 ```json
 {"base_url":"https://your-private-site.example","site_access_token":null}
 ```
 
 Use the real deployed origin and actual Sites outer-access token when required. For the installed Sites outer-access contract, the client sends this token as `OAI-Sites-Authorization: Bearer <token>`. The connection file must also be private. The client refuses URL credentials, paths, query strings, fragments, non-local HTTP, and redirects. Member and Sites credentials are sent only to the configured origin. They are never CLI arguments, logged values, Skill content, or shared source.
+
+For read-only website access, enter the same personal member token in that partner's browser session form. The page stores it in a session-only HttpOnly cookie; Agent API calls continue to use the bearer header. The token does not open the Site through its outer private-access gate, and a ChatGPT/Codex login or Sites visitor identity does not replace the member token.
 
 ## Read and sync
 

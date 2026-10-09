@@ -1,11 +1,13 @@
 import { env } from "cloudflare:workers";
-import { getChatGPTUser } from "../../app/chatgpt-auth";
+import { headers } from "next/headers";
 import { createQueryExecutor, QueryReadError } from "./queries.mjs";
-import { chatGPTSignInPath } from "../../app/chatgpt-auth";
+import { authenticateBrowserMember } from "./browser-member.mjs";
+import { MemberTokenError } from "./member-token.mjs";
+import { snapshotSequence } from "./snapshot-sequence.mjs";
 
 type D1 = NonNullable<Cloudflare.Env["DB"]>;
 export type MemberContext = {
-  user: NonNullable<Awaited<ReturnType<typeof getChatGPTUser>>>;
+  user: { userId: string };
   db: D1;
   execute: ReturnType<typeof createQueryExecutor>;
   scope: { actor_id: string; space_id: string; snapshot_seq: number; purpose: "member_view" };
@@ -17,23 +19,25 @@ export class HttpError extends Error {
 }
 
 export async function memberContext(): Promise<MemberContext> {
-  const user = await getChatGPTUser();
-  if (!user) throw new HttpError(401, "请先使用 ChatGPT 登录，再查看共同空间。", { sign_in_url: chatGPTSignInPath("/") });
   const db = env.DB;
   if (!db) throw new HttpError(503, "共同空间暂时无法读取，请稍后重试。");
-  const membership = await db.prepare("SELECT space_id, role FROM members WHERE user_id = ? LIMIT 2").bind(user.userId).all();
-  const matches = membership.results ?? [];
-  if (matches.length === 0) throw new HttpError(403, "当前账号尚未加入共同空间。");
-  if (matches.length !== 1) throw new HttpError(403, "当前账号对应多个共同空间，暂时无法确定读取范围。");
-  const row = matches[0] as { space_id: string; role: string };
-  const snapshot = await db.prepare("SELECT COALESCE(MAX(seq), 0) AS snapshot_seq FROM messages WHERE space_id = ?").bind(row.space_id).first<{ snapshot_seq: number }>();
-  if (!snapshot) throw new HttpError(503, "暂时无法建立一致的读取快照，请稍后重试。");
+  let identity: Awaited<ReturnType<typeof authenticateBrowserMember>>;
+  try {
+    const requestHeaders = await headers();
+    identity = await authenticateBrowserMember({ db, cookieHeader: requestHeaders.get("cookie") });
+  } catch (error) {
+    if (error instanceof MemberTokenError) throw new HttpError(401, "请输入你的个人连接码以进入共同空间。", { code: "requires_member_token" });
+    throw error;
+  }
+  const snapshot = await db.prepare("SELECT COALESCE(MAX(seq), 0) AS snapshot_seq FROM messages WHERE space_id = ?").bind(identity.space_id).first<{ snapshot_seq: number }>();
+  const snapshotSeq = snapshotSequence(snapshot);
+  if (snapshotSeq === null) throw new HttpError(503, "暂时无法建立一致的读取快照，请稍后重试。", { code: "snapshot_unavailable" });
   return {
-    user,
+    user: { userId: identity.actor_id },
     db,
     execute: createQueryExecutor(db),
-    scope: { actor_id: user.userId, space_id: row.space_id, snapshot_seq: snapshot.snapshot_seq, purpose: "member_view" },
-    role: row.role,
+    scope: { actor_id: identity.actor_id, space_id: identity.space_id, snapshot_seq: snapshotSeq as number, purpose: "member_view" },
+    role: identity.role,
   };
 }
 
@@ -44,7 +48,7 @@ export function routeError(error: unknown): Response {
       invalid_scope: "读取范围无效。",
       unsupported_purpose: "不支持此读取方式。",
       unsupported_query: "不支持此读取请求。",
-      membership_required: "当前账号尚未加入共同空间。",
+      membership_required: "当前成员尚未加入共同空间。",
       transcript_forbidden: "这段对话当前不可读取。",
       thread_not_found: "共同空间中没有找到这段对话。",
       message_not_found: "共同空间中没有找到这条记录。",

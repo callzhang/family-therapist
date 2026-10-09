@@ -4,7 +4,7 @@ The Sites API accepts an authenticated member's confirmed expression for the lat
 
 The submitted text is stored exactly as provided, including leading or trailing spaces and paragraph breaks. The confirmation flag records the caller's assertion; this API cannot prove that a person saw or approved the exact text. The local Therapist Assistant must show the exact outgoing text and obtain confirmation before it calls this endpoint.
 
-At this implementation checkpoint, the HTTP routes use the existing Sites `memberContext()` identity and membership adapter. This is interim route wiring, not the final identity path for a local Codex Therapist Assistant. The separately planned agent API token integration will bind the member from the pre-generated member token; request JSON will continue to be unable to choose actor or space.
+The HTTP routes bind the Agent member through the pre-generated Bearer token and its current D1 membership. The browser read-only view uses a separate HttpOnly session cookie established from the same token. Sites visitor identity headers and request JSON do not choose the actor or space; the private Sites outer-access gate remains separate.
 
 The service writes one immutable `member_expression` message and one `therapist_tasks` row with `status = 'queued'` in one D1 batch. The SQL checks current membership and the latest active thread version during insertion. A repeated identical UUID and payload returns the original receipt; reusing the UUID for different text, actor, space, or thread returns a conflict. A receipt includes the server sequence and creation timestamp, exact text, and `task_status: 'queued'`.
 
