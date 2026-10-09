@@ -50,7 +50,7 @@ Local tool usage metrics are disabled by default. Set `WRANGLER_SEND_METRICS=tru
 
 ## Confirmed Expression Intake
 
-`POST /api/messages` stores the authenticated member's exact confirmed expression and one durable `queued` Therapist task atomically; `GET /api/messages/{messageId}` reads that member's own receipt. A queued receipt proves persistence only, not Therapist execution or a reply. See [`docs/operations/expression-intake.md`](../../docs/operations/expression-intake.md) for the request and verification boundary.
+`POST /api/messages` stores the authenticated member's exact confirmed expression and captures the active thread version in one durable Therapist task atomically; `GET /api/messages/{messageId}` reads that member's own receipt and current task state. `POST /api/therapist/drain` is an authenticated, bodyless manual trigger that claims at most one task. It requires server-side `THERAPIST_MODEL` and `OPENAI_API_KEY` settings. A queued receipt proves persistence only. See [`docs/operations/expression-intake.md`](../../docs/operations/expression-intake.md) and [`docs/operations/therapist-worker.md`](../../docs/operations/therapist-worker.md) for the execution and verification boundary.
 
 ## Workspace Auth Headers
 

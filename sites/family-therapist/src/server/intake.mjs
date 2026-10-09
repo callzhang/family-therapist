@@ -66,8 +66,9 @@ function sameMessage(row, { scope, command, bodyJson }) {
 }
 
 function receiptFromRows(message, task, duplicate) {
-  if (!message || !task || task.message_seq !== message.seq || task.space_id !== message.space_id || task.thread_id !== message.thread_id || task.status !== 'queued') {
-    throw new IntakeError('persistence_incomplete', 503, 'The expression was not fully queued; no receipt is available.');
+  if (!message || !task || task.message_seq !== message.seq || task.space_id !== message.space_id || task.thread_id !== message.thread_id ||
+    !['queued', 'running', 'failed', 'obsolete', 'completed'].includes(task.status)) {
+    throw new IntakeError('persistence_incomplete', 503, 'The expression record or its execution receipt is incomplete.');
   }
   return {
     message_id: message.message_id,
@@ -122,13 +123,13 @@ export async function submitConfirmedExpression({ db, scope, command: rawCommand
     ON CONFLICT(message_id) DO NOTHING`)
     .bind(command.message_id, scope.space_id, command.thread_id, scope.actor_id, bodyJson, createdAt,
       scope.space_id, scope.actor_id, scope.space_id, command.thread_id, command.expected_thread_seq);
-  const taskInsert = db.prepare(`INSERT INTO therapist_tasks(message_id, message_seq, space_id, thread_id, status, created_at)
-    SELECT m.message_id, m.seq, m.space_id, m.thread_id, 'queued', ?
+  const taskInsert = db.prepare(`INSERT INTO therapist_tasks(message_id, message_seq, space_id, thread_id, status, created_at, input_thread_seq)
+    SELECT m.message_id, m.seq, m.space_id, m.thread_id, 'queued', ?, ?
     FROM messages m
     WHERE m.message_id = ? AND m.space_id = ? AND m.actor_id = ? AND m.thread_id = ? AND m.kind = 'member_expression' AND m.body_json = ?
       AND EXISTS (SELECT 1 FROM members WHERE space_id = ? AND user_id = ?)
     ON CONFLICT(message_id) DO NOTHING`)
-    .bind(createdAt, command.message_id, scope.space_id, scope.actor_id, command.thread_id, bodyJson, scope.space_id, scope.actor_id);
+    .bind(createdAt, command.expected_thread_seq, command.message_id, scope.space_id, scope.actor_id, command.thread_id, bodyJson, scope.space_id, scope.actor_id);
   let insertedMessage;
   try {
     const results = await db.batch([messageInsert, taskInsert]);
