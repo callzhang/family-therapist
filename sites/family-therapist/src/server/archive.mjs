@@ -17,11 +17,12 @@ export function formatArchiveMessage(message, rolesByActor) {
   return `## ${speaker} · ${message.created_at}\n\n记录 UUID：${message.message_id}\n\n${archiveBodyText(message.body) ?? `暂不支持的记录正文：${JSON.stringify(message.body)}`}\n\n`;
 }
 
-export function createArchiveStream({ format, thread, snapshot, readPage, rolesByActor = {} }) {
+/** @param {{format: 'md'|'jsonl', thread: object, snapshot: number, cutoff_message_id?: string|null, readPage: (cursor: string|null) => Promise<any>, rolesByActor?: Record<string,string>}} options */
+export function createArchiveStream({ format, thread, snapshot, cutoff_message_id = null, readPage, rolesByActor = {} }) {
   const encoder = new TextEncoder();
   async function* chunks() {
-    if (format === 'jsonl') yield encoder.encode(`${JSON.stringify({ type: 'archive', snapshot_seq: snapshot, thread })}\n`);
-    else yield encoder.encode(`# ${thread.title}\n\n状态：${thread.status}\nThread：${thread.thread_id}\n读取快照序号：${snapshot}\n摘要：${thread.summary}\n\n`);
+    if (format === 'jsonl') yield encoder.encode(`${JSON.stringify({ type: 'archive', snapshot_seq: snapshot, cutoff_message_id, thread })}\n`);
+    else yield encoder.encode(`# ${thread.title}\n\n状态：${thread.status}\nThread：${thread.thread_id}\n读取快照序号：${snapshot}\n最后包含记录 UUID：${cutoff_message_id ?? '无'}\n摘要：${thread.summary}\n\n`);
     let cursor = null;
     for (;;) {
       const page = await readPage(cursor);

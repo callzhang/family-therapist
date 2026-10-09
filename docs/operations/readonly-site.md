@@ -13,6 +13,8 @@ Use only a local D1 database and a local R2 bucket. Do not seed hosted services 
 
 The implementation task does not run this fixture or seed any data. Production use requires independently configured D1/R2 bindings and a verified hosted migration. R2 archive writes count UTF-8 bytes in a paged first pass, then stream a fresh read of the same fixed snapshot through a fixed-length stream; the site does not assemble full history in memory or set a guessed content length.
 
+The principles view also offers independent Markdown and JSONL archives of confirmed global principles and topic conclusions, followed by a separate history of discussion-command operations. Its header records the space snapshot and actual last included message UUID. The browser route uses signed-in ChatGPT member identity; the Agent route uses the existing member bearer-token context. Both persist under a private space/member/snapshot key and return only after R2 receipt and readback agree on size and ETag. These changes were verified by focused stream/query tests and TypeScript/build checks; a hosted archive request was not made by this implementation task.
+
 ## Primary browser acceptance
 
 - Check the Chinese page title and readable three-item navigation at phone width, then use the visible thread selector to switch pending, active, and settled conversations.

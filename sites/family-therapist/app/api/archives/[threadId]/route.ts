@@ -10,9 +10,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ thre
     const bucket = (await import("cloudflare:workers")).env.BUCKET;
     if (!bucket) throw new HttpError(503, "档案下载暂时不可用，请稍后重试。");
     const { threadId } = await params;
-    const format = new URL(request.url).searchParams.get("format") ?? "md";
-    if (format !== "md" && format !== "jsonl") throw new HttpError(400, "请选择 Markdown 或 JSONL 格式。");
+    const requestedFormat = new URL(request.url).searchParams.get("format") ?? "md";
+    if (requestedFormat !== "md" && requestedFormat !== "jsonl") throw new HttpError(400, "请选择 Markdown 或 JSONL 格式。");
+    const format = requestedFormat as "md" | "jsonl";
     const thread = await context.execute("get_thread", { thread_id: threadId }, context.scope) as Thread;
+    const cutoff = await context.db.prepare("SELECT message_id FROM messages WHERE space_id = ? AND thread_id = ? AND seq <= ? ORDER BY seq DESC LIMIT 1")
+      .bind(context.scope.space_id, thread.thread_id, context.scope.snapshot_seq).first<{ message_id: string }>();
     const membersResult = await context.db.prepare("SELECT user_id, role FROM members WHERE space_id = ?").bind(context.scope.space_id).all();
     const rolesByActor = Object.fromEntries((membersResult.results ?? []).map((record) => {
       const member = record as { user_id: string; role: string };
@@ -23,6 +26,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ thre
       format,
       thread,
       snapshot: context.scope.snapshot_seq,
+      cutoff_message_id: cutoff?.message_id ?? null,
       rolesByActor,
       readPage: (cursor: string | null) => context.execute("get_messages", { thread_id: thread.thread_id, after_message_id: cursor, limit: 100 }, context.scope) as Promise<{ items: Message[]; has_more: boolean; next_after_id: string | null }>,
     };
@@ -44,6 +48,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ thre
       "Content-Disposition": `attachment; filename="consultation-${safeThreadName}.${format === "md" ? "md" : "jsonl"}"`,
       "Cache-Control": "private, no-store",
       "X-Archive-Snapshot": String(context.scope.snapshot_seq),
+      "X-Archive-Cutoff-Message": cutoff?.message_id ?? "",
       "X-Archive-ETag": saved.etag,
       "X-Archive-Size": String(saved.size),
     } });
