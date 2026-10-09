@@ -17,3 +17,5 @@ node --test tests/protocol/history.test.mjs tests/protocol/discussion.test.mjs t
 ```
 
 38 项测试通过。云端 Therapist Skill 已编写；Sites starter 已注册和构建，但产品 API、数据库适配、网页和本地客户端尚未交付。模型列表鉴权成功，实际生成因 API 余额耗尽而阻塞，详见[当前验证记录](docs/verification/2026-10-08-responses-runtime.md)。
+
+本地 Therapist Assistant 的指令源与操作边界已写入 [Skill](skills/local-therapist-assistant/SKILL.md) 和[运维说明](docs/operations/local-assistant.md)，并附有虚构行为评估案例规格。此为文档交付，不是本地客户端、云端消息 API、认证配置、heartbeat 或自动更新实现；阶段 D 仍未完成。

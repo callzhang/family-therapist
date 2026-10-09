@@ -6,3 +6,5 @@
   已完成本地 Responses 工具循环与检查点恢复（23 项测试）、云端 Therapist Skill 的格式检查、私密 Site 注册与 starter 构建。项目 Key 已安全配置，模型列表鉴权 HTTP 200；生成请求因 `credit_balance_exhausted` 返回 429，尚未证明真实工具执行或咨询质量。数据库/身份适配、后台任务和产品页面仍未完成。证据见 `docs/verification/2026-10-08-responses-runtime.md`。
 - [ ] **阶段 C：只读网站与文件。** 依赖阶段 B 的持久数据与访问控制，建设只读页面、档案生成和访问验证。
 - [ ] **阶段 D：本地 Skill、同步与升级。** 依赖阶段 B 的实际 API 与凭证流程，建设本地助手、同步客户端、心跳和可恢复升级。
+
+  已交付本地 Assistant 指令源（`skills/local-therapist-assistant/`）、操作边界说明（`docs/operations/local-assistant.md`）和虚构行为评估案例规格（`evals/local-assistant/case-spec.md`）。这不代表真实 API/成员认证、同步客户端、定时 heartbeat、设备安装或升级器已完成；这些仍等待阶段 B 的可验证传输配置与后续客户端实现。
