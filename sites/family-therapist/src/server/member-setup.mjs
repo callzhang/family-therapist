@@ -63,8 +63,14 @@ export function parseMemberSetupSeed(seedJson) {
 async function currentState(db, spaceId) {
   const memberResult = await db.prepare('SELECT user_id, role FROM members WHERE space_id = ? ORDER BY user_id').bind(spaceId).all();
   const tokenResult = await db.prepare('SELECT token_sha256, user_id, revoked_at FROM member_tokens WHERE space_id = ? ORDER BY user_id').bind(spaceId).all();
-  if (!Array.isArray(memberResult?.results) || !Array.isArray(tokenResult?.results)) throw new MemberSetupError('setup_unavailable', 503);
-  return { members: memberResult.results, tokens: tokenResult.results };
+  const historyResult = await db.prepare(`SELECT
+    EXISTS (SELECT 1 FROM messages WHERE space_id = ?) OR
+    EXISTS (SELECT 1 FROM thread_versions WHERE space_id = ?) OR
+    EXISTS (SELECT 1 FROM agreement_versions WHERE space_id = ?) OR
+    EXISTS (SELECT 1 FROM discussion_projection WHERE space_id = ?) OR
+    EXISTS (SELECT 1 FROM therapist_tasks WHERE space_id = ?) AS has_history`).bind(spaceId, spaceId, spaceId, spaceId, spaceId).first();
+  if (!Array.isArray(memberResult?.results) || !Array.isArray(tokenResult?.results) || !historyResult || ![0, 1].includes(historyResult.has_history)) throw new MemberSetupError('setup_unavailable', 503);
+  return { members: memberResult.results, tokens: tokenResult.results, hasHistory: historyResult.has_history === 1 };
 }
 
 function exactlyConfigured(state, seed) {
@@ -79,24 +85,32 @@ function exactlyConfigured(state, seed) {
 }
 
 function emptyTarget(state) {
-  return state.members.length === 0 && state.tokens.length === 0;
+  return state.members.length === 0 && state.tokens.length === 0 && !state.hasHistory;
 }
 
+const noHistoryData = `NOT EXISTS (SELECT 1 FROM messages WHERE space_id = ?) AND
+  NOT EXISTS (SELECT 1 FROM thread_versions WHERE space_id = ?) AND
+  NOT EXISTS (SELECT 1 FROM agreement_versions WHERE space_id = ?) AND
+  NOT EXISTS (SELECT 1 FROM discussion_projection WHERE space_id = ?) AND
+  NOT EXISTS (SELECT 1 FROM therapist_tasks WHERE space_id = ?)`;
+const noTargetData = `NOT EXISTS (SELECT 1 FROM members WHERE space_id = ?) AND NOT EXISTS (SELECT 1 FROM member_tokens WHERE space_id = ?) AND ${noHistoryData}`;
+
 function memberStatement(db, seed) {
-  const emptyGuard = 'NOT EXISTS (SELECT 1 FROM members WHERE space_id = ?) AND NOT EXISTS (SELECT 1 FROM member_tokens WHERE space_id = ?)';
-  const selectRows = seed.members.map(() => `SELECT ?, ?, ? WHERE ${emptyGuard}`).join(' UNION ALL ');
-  const bindings = seed.members.flatMap((member) => [seed.space_id, member.actor_id, member.role, seed.space_id, seed.space_id]);
+  const selectRows = seed.members.map(() => `SELECT ?, ?, ? WHERE ${noTargetData}`).join(' UNION ALL ');
+  const bindings = seed.members.flatMap((member) => [seed.space_id, member.actor_id, member.role, ...Array(7).fill(seed.space_id)]);
   return db.prepare(`INSERT INTO members (space_id, user_id, role) ${selectRows}`).bind(...bindings);
 }
 
 function tokenStatement(db, seed) {
   const memberGuard = [
+    'changes() = 2',
     '(SELECT COUNT(*) FROM members WHERE space_id = ?) = 2',
     ...seed.members.map(() => 'EXISTS (SELECT 1 FROM members WHERE space_id = ? AND user_id = ? AND role = ?)'),
     'NOT EXISTS (SELECT 1 FROM member_tokens WHERE space_id = ?)',
+    noHistoryData,
   ].join(' AND ');
   const selectRows = seed.members.map(() => `SELECT ?, ?, ?, NULL WHERE ${memberGuard}`).join(' UNION ALL ');
-  const guardBindings = [seed.space_id, ...seed.members.flatMap((member) => [seed.space_id, member.actor_id, member.role]), seed.space_id];
+  const guardBindings = [seed.space_id, ...seed.members.flatMap((member) => [seed.space_id, member.actor_id, member.role]), seed.space_id, ...Array(5).fill(seed.space_id)];
   const bindings = seed.members.flatMap((member) => [member.token_sha256, seed.space_id, member.actor_id, ...guardBindings]);
   return db.prepare(`INSERT INTO member_tokens (token_sha256, space_id, user_id, revoked_at) ${selectRows}`).bind(...bindings);
 }
