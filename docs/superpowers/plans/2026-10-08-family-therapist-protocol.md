@@ -1,6 +1,6 @@
 # Family Therapist Protocol Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 交付可运行、可回归验证的 UUID 历史分页与夫妻共同讨论状态规则，供后续生产 API 调用。
 
@@ -32,7 +32,7 @@
 
 **Test:** `tests/protocol/history.test.mjs`
 
-- [ ] **Step 1：写入以下完整测试。** UUID 以标识使用，服务器 seq 决定顺序；例子故意使用与顺序相反的 UUID 和时间。
+- [x] **Step 1：写入以下完整测试。** UUID 以标识使用，服务器 seq 决定顺序；例子故意使用与顺序相反的 UUID 和时间。
 
 ```js
 import test from 'node:test';
@@ -100,13 +100,13 @@ test('returned records cannot mutate retained history', () => {
 });
 ```
 
-- [ ] **Step 2：执行失败测试。**
+- [x] **Step 2：执行失败测试。**
 
 Run: `node --test tests/protocol/history.test.mjs`
 
 Expected: FAIL，导入的 history.mjs 不存在；如果是其他错误先修复测试设置。
 
-- [ ] **Step 3：写入以下完整实现。** 这里用完整数组表达契约；生产查询必须在数据库按授权范围和 seq 分页，不能将所有历史加载进 Worker 内存。
+- [x] **Step 3：写入以下完整实现。** 这里用完整数组表达契约；生产查询必须在数据库按授权范围和 seq 分页，不能将所有历史加载进 Worker 内存。
 
 ```js
 export function pageHistory(records, {
@@ -136,13 +136,13 @@ export function pageHistory(records, {
 }
 ```
 
-- [ ] **Step 4：再次执行并确认全部通过。**
+- [x] **Step 4：再次执行并确认全部通过。**
 
 Run: `node --test tests/protocol/history.test.mjs`
 
 Expected: 6 tests，0 failures。检查 first page → fixed snapshot → live increment 的链路，不仅检查单页条数。
 
-- [ ] **Step 5：提交这两个文件。**
+- [x] **Step 5：提交这两个文件。**
 
 ```sh
 git add packages/protocol/history.mjs tests/protocol/history.test.mjs
@@ -157,7 +157,7 @@ git commit -m "feat(protocol): define UUID cursor and history snapshot semantics
 
 协议输入 actor 必须由未来的认证适配器提供。proposal id 对应不可变文字和动作；修改内容要新建 proposal，已过期的提案不能继续执行。全局 revision 只用于本阶段纯模型；生产适配器按相关资源的版本作乐观锁，不能因为收到无关升级通知就让确认过期。
 
-- [ ] **Step 1：写入以下完整测试。**
+- [x] **Step 1：写入以下完整测试。**
 
 ```js
 import test from 'node:test';
@@ -253,13 +253,13 @@ test('input state is not mutated, and successful actions preserve single active'
 });
 ```
 
-- [ ] **Step 2：执行失败测试。**
+- [x] **Step 2：执行失败测试。**
 
 Run: `node --test tests/protocol/discussion.test.mjs`
 
 Expected: FAIL，尚无 discussion.mjs。
 
-- [ ] **Step 3：写入完整状态规则实现。** 不从自然语言猜测 action；动作必须是用户在本地明确确认后生成的结构化请求。
+- [x] **Step 3：写入完整状态规则实现。** 不从自然语言猜测 action；动作必须是用户在本地明确确认后生成的结构化请求。
 
 ```js
 export function initialDiscussion(members) {
@@ -357,13 +357,13 @@ export function applyDiscussion(state, actor, action) {
 }
 ```
 
-- [ ] **Step 4：执行测试并核对 9 个真实场景。**
+- [x] **Step 4：执行测试并核对 9 个真实场景。**
 
 Run: `node --test tests/protocol/discussion.test.mjs`
 
 Expected: 9 tests，0 failures。两条审批属于不同 proposal 时没有生效共识；必须看到这个反例通过。
 
-- [ ] **Step 5：提交两个文件。**
+- [x] **Step 5：提交两个文件。**
 
 ```sh
 git add packages/protocol/discussion.mjs tests/protocol/discussion.test.mjs
@@ -374,7 +374,7 @@ git commit -m "feat(protocol): model bilateral thread and agreement transitions"
 
 **Create:** `docs/operations/protocol.md`
 
-- [ ] **Step 1：写入以下完整文档内容。**
+- [x] **Step 1：写入以下完整文档内容。**
 
 ```markdown
 # Protocol module boundary
@@ -402,7 +402,7 @@ quality, deployment, local scheduling, or skill upgrades. Those require their ow
 acceptance evidence. Local-only synthetic fixtures are not clinical or production data.
 ```
 
-- [ ] **Step 2：运行本阶段完整测试和差异检查。**
+- [x] **Step 2：运行本阶段完整测试和差异检查。**
 
 ```sh
 node --test tests/protocol/history.test.mjs tests/protocol/discussion.test.mjs
@@ -411,7 +411,7 @@ git diff --check
 
 Expected: 15 tests，0 failures；无空白差异错误。没有实现任何 API，不生成“API 已就绪”声明。
 
-- [ ] **Step 3：提交文档并汇报结果。**
+- [x] **Step 3：提交文档并汇报结果。**
 
 ```sh
 git add docs/operations/protocol.md
