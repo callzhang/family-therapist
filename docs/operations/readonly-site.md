@@ -11,7 +11,7 @@ Use only a local D1 database and a local R2 bucket. Do not seed hosted services 
 7. Download Markdown and JSONL from the settled archive. Confirm both contain all messages through the reported snapshot, the JSONL preserves the unsupported body, and the artifact is returned only after an R2 write/read succeeds.
 8. Remove the local fixture database and bucket state when browser QA is complete.
 
-The implementation task does not run this fixture or seed any data. Production use requires independently configured D1/R2 bindings and a verified hosted migration.
+The implementation task does not run this fixture or seed any data. Production use requires independently configured D1/R2 bindings and a verified hosted migration. R2 archive writes count UTF-8 bytes in a paged first pass, then stream a fresh read of the same fixed snapshot through a fixed-length stream; the site does not assemble full history in memory or set a guessed content length.
 
 ## Primary browser acceptance
 
@@ -21,3 +21,7 @@ The implementation task does not run this fixture or seed any data. Production u
 - Remove the authenticated identity to verify the page offers the ChatGPT sign-in link and does not show the empty-space message. Separately verify an authenticated member with no records sees the calm empty state.
 - Check a deliberately malformed latest `understanding_updated` record fails with an explicit read error instead of showing an empty or fabricated understanding summary.
 - Compare downloaded archives with local D1 rows across multiple pages. Confirm Markdown speakers and UUIDs, JSONL raw-body preservation, and that a readback with mismatched R2 ETag or size cannot return a successful download.
+
+## R2 fixed-length stream contract
+
+The Cloudflare Workers runtime rejects `R2Bucket.put()` when given an unknown-length readable body. Archive export therefore uses two bounded passes over the same authenticated snapshot: count encoded bytes while discarding each first-pass chunk, then pipe a freshly generated archive through `FixedLengthStream(byteLength)` while `bucket.put()` consumes its readable side. The pipeline abort signal stops the producer if storage rejects. A successful download also requires the `put` receipt and `get` readback to match the counted size and ETag.
