@@ -10,4 +10,10 @@
 node --test tests/protocol/history.test.mjs tests/protocol/discussion.test.mjs
 ```
 
-Responses API 与 Sites 的接入、网页和本地客户端仍属后续阶段；本仓库当前没有可部署 API，也没有验证真实账号认证。
+阶段 B 已增加 Responses 工具循环和检查点恢复模块；完整本地测试命令为：
+
+```sh
+node --test tests/protocol/history.test.mjs tests/protocol/discussion.test.mjs tests/therapist/responses.test.mjs
+```
+
+38 项测试通过。云端 Therapist Skill 已编写；Sites starter 已注册和构建，但产品 API、数据库适配、网页和本地客户端尚未交付。模型列表鉴权成功，实际生成因 API 余额耗尽而阻塞，详见[当前验证记录](docs/verification/2026-10-08-responses-runtime.md)。
