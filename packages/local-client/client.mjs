@@ -117,6 +117,7 @@ export function createAgentClient({ member: rawMember, connection: rawConnection
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new TypeError('limit must be from 1 to 100');
       return request('GET', '/api/updates', { query: { after_message_id, snapshot_seq, limit } });
     },
+    getSkillRelease: () => request('GET', '/api/skill/release'),
     query: (name, args) => { validateToolArguments(name, args); return request('POST', `/api/query/${encodeURIComponent(name)}`, { body: args }); },
     getDiscussion: () => request('GET', '/api/discussion'),
     submitExpression: (command) => request('POST', '/api/messages', { body: assertExpression(command) }),

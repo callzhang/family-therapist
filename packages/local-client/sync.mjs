@@ -57,6 +57,7 @@ function validState(state, member) {
 }
 function validatePage(page, { member, requestedCursor, requestedSnapshot, previousSeq }) {
   if (!page || Object.getPrototypeOf(page) !== Object.prototype || !Array.isArray(page.items) || typeof page.has_more !== 'boolean' || !Number.isSafeInteger(page.snapshot_seq) || page.snapshot_seq < 0 || !(page.next_after_id === null || typeof page.next_after_id === 'string')) fail('server page shape is invalid');
+  if (page.skill_release !== undefined && (!page.skill_release || Object.getPrototypeOf(page.skill_release) !== Object.prototype || Object.keys(page.skill_release).sort().join(',') !== 'release_id,sha256,version' || typeof page.skill_release.version !== 'string' || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}\.[1-9][0-9]*$/.test(page.skill_release.version) || typeof page.skill_release.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(page.skill_release.sha256) || typeof page.skill_release.release_id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(page.skill_release.release_id))) fail('server Skill release notice is invalid');
   if (requestedSnapshot !== null && page.snapshot_seq !== requestedSnapshot) fail('server changed the retained snapshot');
   if (page.items.length > 100) fail('server returned more than the requested page size');
   const seen = new Set(); let seq = previousSeq; let lastId = requestedCursor;
@@ -71,9 +72,9 @@ function validatePage(page, { member, requestedCursor, requestedSnapshot, previo
   if (!page.items.length && page.next_after_id !== requestedCursor) fail('empty page changed its cursor');
   if (page.has_more && page.items.length === 0) fail('server returned an empty page with has_more');
   if (page.has_more && (page.items.length < 1 || seq >= page.snapshot_seq)) fail('server paging marker is inconsistent with its snapshot');
-  return { nextCursor: lastId, nextSeq: seq, snapshotSeq: page.snapshot_seq };
+  return { nextCursor: lastId, nextSeq: seq, snapshotSeq: page.snapshot_seq, skillRelease: page.skill_release ?? null };
 }
-async function acquireLock(directory) {
+export async function acquireLock(directory) {
   const lockDirectory = path.join(directory, '.sync-locks');
   await mkdir(lockDirectory, { recursive: true, mode: 0o700 });
   const directoryStat = await lstat(lockDirectory);
@@ -158,7 +159,7 @@ export async function syncFormalMessages({ client, member: rawMember, stateDirec
   if (!client || typeof client.getUpdates !== 'function' || typeof stateDirectory !== 'string' || !path.isAbsolute(stateDirectory)) throw new TypeError('client and absolute stateDirectory are required');
   await ensurePrivateDirectory(stateDirectory);
   const release = await acquireLock(stateDirectory);
-  const result = { saved: 0, duplicates: 0, cursor: null, snapshot_seq: null, complete: false };
+  const result = { saved: 0, duplicates: 0, cursor: null, snapshot_seq: null, complete: false, skill_release: null };
   try {
     const metaPath = path.join(stateDirectory, 'sync-state.json');
     let state = await readJson(metaPath);
@@ -172,6 +173,8 @@ export async function syncFormalMessages({ client, member: rawMember, stateDirec
     for (let pageNo = 0; pageNo < MAX_PAGES_PER_RUN; pageNo += 1) {
       const page = await client.getUpdates({ after_message_id: state.cursor_message_id, snapshot_seq: state.snapshot_seq, limit: 100 });
       const validated = validatePage(page, { member, requestedCursor: state.cursor_message_id, requestedSnapshot: state.snapshot_seq, previousSeq: state.previous_seq });
+      if (result.skill_release && validated.skillRelease && JSON.stringify(result.skill_release) !== JSON.stringify(validated.skillRelease)) fail('server changed the Skill release notice during sync');
+      if (validated.skillRelease) result.skill_release = validated.skillRelease;
       if (state.snapshot_seq === null) {
         state = { ...state, snapshot_seq: validated.snapshotSeq };
         await atomicJson(stateDirectory, 'sync-state.json', state);
