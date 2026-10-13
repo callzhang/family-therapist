@@ -29,9 +29,9 @@
   <p class="date">更新日期：2026 年 10 月 9 日</p>
 
   <h2>访问网站</h2>
-  <p>网站地址请向部署管理员获取。</p>
+  <p>网站地址：<a href="https://family-therapist.dev-accounts.workers.dev/">https://family-therapist.dev-accounts.workers.dev/</a>。当前空间是新建的空白空间，旧 ChatGPT Sites 中的讨论没有迁移过来。</p>
   <p>网站使用 Cloudflare Workers 托管。进入网站需要输入各自单独的成员链接码；ChatGPT 登录账号不会代替链接码。丈夫和妻子各用自己的码，不能互换。链接码是私密凭证，请通过双方认可的私密方式分别交给本人，不要放进聊天截图、公开文档、URL 或共享 Skill。</p>
-  <p>链接码分别保存在部署管理员设备上的私密目录 <code>.local-members/partner-husband.json</code> 和 <code>.local-members/partner-wife.json</code>。这两个文件不应发布或写入本手册。若文件不可用，应由管理员从安全渠道重新配置或轮换，不要把旧码复制进手册。</p>
+  <p>在 Derek 的本机，链接码分别保存在项目私密目录 <code>.local-members/partner-husband.json</code> 和 <code>.local-members/partner-wife.json</code>。这两个文件不在 GitHub 发布包或本手册里。若文件不可用，应由管理员从安全渠道重新配置或轮换，不要把旧码复制进手册。</p>
   <p>首次进入网站时，在成员连接框输入自己的链接码。浏览器只在当前会话中保存登录状态；退出网站或关闭会话后可能需要重新输入。另一位伴侣仍需通过自己的成员码进入。Cloudflare Workers 地址本身没有 ChatGPT 账号白名单；若将来增加 Cloudflare Access 等外层访问控制，还需把双方加入该访问范围。</p>
 
   <h2>本地 Skill 与云端 Therapist 如何配合</h2>
@@ -42,17 +42,22 @@
 
   <h2>用一句话请求安装 Skill</h2>
   <p>在 Codex 或支持 Skills 的 ChatGPT 中，复制并发送下面这句话：</p>
-  <p class="note">请从我有权限访问的 GitHub 仓库 <code>callzhang/family-therapist</code> 读取 <code>skills/local-therapist-assistant</code>，将它安装为当前环境可复用的 Skill；安装后核对 <code>SKILL.md</code>、<code>references/method.md</code> 和 <code>references/initialization.md</code> 均已就位，如果 Skills 功能或安装工具不可用，请说明缺少的条件并停止，不要只在本次对话中遵循，也不要声称已安装。</p>
-  <p>安装者需要能访问该 GitHub 仓库。ChatGPT 只有在账号/工作区已提供 Skills 功能时，才能通过 Skills 界面创建或安装可复用 Skill；ChatGPT 里的 Skill 安装也不会自动安装到本机 Codex。详情见 <a href="https://help.openai.com/en/articles/20001066-skills-in-chatgpt">OpenAI 的 ChatGPT Skills 说明</a>。</p>
+  <p class="note">请从 GitHub 公开仓库 <code>callzhang/family-therapist</code> 读取 <code>skills/local-therapist-assistant</code>，将它安装为当前环境可复用的 Skill；安装后核对 <code>SKILL.md</code>、<code>references/method.md</code> 和 <code>references/initialization.md</code> 均已就位，如果仓库、Skills 功能或安装工具不可用，请说明缺少的条件并停止，不要只在本次对话中遵循，也不要声称已安装。</p>
+  <p>仓库现为公开仓库，安装 Skill 不需要 GitHub 仓库成员权限。ChatGPT 只有在账号/工作区已提供 Skills 功能时，才能通过 Skills 界面创建或安装可复用 Skill；ChatGPT 里的 Skill 安装也不会自动安装到本机 Codex。详情见 <a href="https://help.openai.com/en/articles/20001066-skills-in-chatgpt">OpenAI 的 ChatGPT Skills 说明</a>。</p>
+  <p>如果保存服务返回 HTTP 429（请求限流）或其他错误，即使 Skill 文件已下载且格式校验、哈希比对通过，也只代表本地文件准备好了，不代表它已持久安装或能在后续对话复用。等保存服务恢复后再重试，并在 Skills 列表或安装回执中确认成功；确认前不要报告“已安装”。</p>
   <p>即使 Skill 已安装，也只代表本地沟通规则可复用。它不会自动连上网站、启用每小时同步或 heartbeat，也不会替用户发送消息；这些能力仍需在各自的 Codex 上配置并验证本地客户端和私密连接。</p>
 
   <h2>隐私、费用与边界</h2>
   <p>本地 Agent 负责私下整理和本人确认；云端只处理正式提交的共同空间内容。不要提交希望永久保密、不愿让伴侣或 Therapist 看见的信息。</p>
   <p>AI Therapist 是 AI 服务，不是真实持牌心理治疗师，也不能替代专业诊断、医疗建议或紧急危机服务。若存在现实人身危险，请优先联系当地紧急服务或可信任的专业人士。</p>
-  <p>打开网站本身不按访问次数收费。Cloudflare Workers、D1 和 R2 有免费额度；若 Cloudflare 账号使用付费套餐，可能产生账号级费用。每次云端 Therapist 模型调用会产生模型 API 用量费用，主要随输入上下文和输出 token 数变化。实际账单需以对应服务商账户用量页面为准；本手册不包含 API 密钥或余额信息。</p>
+  <p>打开网站本身不按访问次数收费。Cloudflare Workers、D1 和 R2 有免费额度；若公司 Cloudflare 账号使用付费 Workers 套餐，会有账号级套餐费用。每次云端 Therapist 模型调用会产生 OpenAI API 用量费用，主要随输入上下文和输出 token 数变化。实际账单需以 Cloudflare 和 OpenAI 账户用量页面为准；本手册不包含 API 密钥或余额信息。</p>
+
+  <h2>项目与安全更新</h2>
+  <p>项目代码仓库已公开：<a href="https://github.com/callzhang/family-therapist">github.com/callzhang/family-therapist</a>。截至 2026 年 10 月 9 日，GitHub Dependabot 当前开放告警为 0 条；依赖审计工具仍报告 8 个高风险开发/构建依赖项。上游尚无适合当前工具链的兼容修复版本，强制降级会破坏现有版本组合，因此这些审计项没有被忽略或关闭，后续需要在有兼容修复时升级。</p>
+  <p>依赖更新已合并到仓库主分支；这只确认了代码入库，不代表 Cloudflare 自动部署已经完成。网站是否运行最新代码，应以部署平台的实际部署记录和线上检查为准。</p>
 
   <h2>联系与排错</h2>
-  <p>网站打不开：向部署管理员确认当前地址并检查网络。链接码无效：确认使用了自己对应的码；不要把码发到公开群或提交到 GitHub。Codex 没识别 Skill：确认安装路径中有 <code>local-therapist-assistant/SKILL.md</code>，然后重新打开 Codex 或开始新对话。Skill 已安装但不能同步：这是预期的分层行为，Skill 安装不会自动配置私密 API 客户端；需要管理员为该成员配置本地连接和客户端。</p>
+  <p>网站打不开：确认地址正确并检查网络。链接码无效：确认使用了自己对应的码；不要把码发到公开群或提交到 GitHub。Codex 没识别 Skill：确认安装路径中有 <code>local-therapist-assistant/SKILL.md</code>，然后重新打开 Codex 或开始新对话。Skill 已安装但不能同步：这是预期的分层行为，Skill 安装不会自动配置私密 API 客户端；需要管理员为该成员配置本地连接和客户端。</p>
 
   <footer>把链接码与本地对话当作私密信息妥善保管。此手册不包含任何认证凭证。</footer>
 </main>
